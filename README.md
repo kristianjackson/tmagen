@@ -1,0 +1,44 @@
+# TMAGen
+
+TMAGen is a Cloudflare-hosted, Supabase-backed fan-fiction platform inspired by *The Magnus Archives*. The project is structured so the public browsing experience, creator workspace, transcript ingestion pipeline, and generated-story archive can evolve in the same repository without turning into a pile of unrelated scripts.
+
+## Current Baseline
+
+- `apps/web` contains the Cloudflare Workers + React Router web app.
+- `supabase` contains the Supabase CLI config and the first schema migration.
+- `scripts/extract-transcripts.mjs` converts the local transcript PDFs into cleaned JSON files that are ready for metadata generation and embedding.
+- `docs/setup.md` contains the detailed manual steps for local setup, Supabase setup, Cloudflare setup, and MCP wiring.
+
+## Repository Layout
+
+- `apps/web`: web application deployed to Cloudflare Workers
+- `data/processed/episodes`: generated transcript JSON output, ignored from git
+- `docs`: architecture notes and setup instructions
+- `scripts`: local tooling for transcript extraction and future ingestion jobs
+- `supabase`: database configuration, migrations, and seed files
+- `tma_source_transcripts`: local source PDFs, intentionally ignored from git
+
+## Commands
+
+Run these from the repository root:
+
+```bash
+npm run dev
+npm run typecheck
+npm run build
+npm run extract:transcripts
+```
+
+## Recommended Order
+
+1. Read [docs/setup.md](./docs/setup.md).
+2. Run `npm run dev` and confirm the web app boots.
+3. Run `npm run extract:transcripts` to create the first cleaned transcript artifacts.
+4. Create the Supabase project and apply the first migration.
+5. Configure Cloudflare secrets and deploy the web app.
+
+## Notes
+
+- The local transcript corpus is deliberately kept out of git.
+- The first web app screen is a project-specific landing/status page, not the final product UI.
+- The first schema is intentionally conservative: it covers transcript storage, generated story versioning, and public/private visibility without pretending the whole product is already finished.

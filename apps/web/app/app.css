@@ -1,0 +1,31 @@
+@import "tailwindcss" source(".");
+
+@theme {
+  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-display: "Literata", ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+  --color-ink: #0d0d0d;
+  --color-night: #17120f;
+  --color-bone: #f2ebda;
+  --color-blood: #c74b38;
+  --color-gold: #d3a34a;
+  --color-mist: #8f8577;
+}
+
+html,
+body {
+  min-height: 100%;
+  background:
+    radial-gradient(circle at top, rgba(211, 163, 74, 0.12), transparent 30%),
+    linear-gradient(180deg, #17120f 0%, #0d0d0d 55%, #080808 100%);
+  color: var(--color-bone);
+}
+
+body::selection {
+  background: rgba(199, 75, 56, 0.35);
+  color: var(--color-bone);
+}
+
+.font-display {
+  font-family: var(--font-display);
+}

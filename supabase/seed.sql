@@ -1,0 +1,1 @@
+-- Seed data is intentionally handled in the initial migration for now.

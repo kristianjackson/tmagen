@@ -1,0 +1,8 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+
+tma_source_transcripts/
+data/processed/episodes/*
+!data/processed/episodes/.gitkeep

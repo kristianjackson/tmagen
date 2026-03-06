@@ -1,0 +1,15 @@
+{
+  "name": "tmagen",
+  "private": true,
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "build": "npm --prefix apps/web run build",
+    "cf-typegen": "npm --prefix apps/web run cf-typegen",
+    "deploy:web": "npm --prefix apps/web run deploy",
+    "dev": "npm --prefix apps/web run dev",
+    "extract:transcripts": "node scripts/extract-transcripts.mjs --input ./tma_source_transcripts --output ./data/processed/episodes",
+    "typecheck": "npm --prefix apps/web run typecheck"
+  }
+}

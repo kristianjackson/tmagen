@@ -1,0 +1,197 @@
+# Setup Guide
+
+This guide is written for a junior developer. Follow the steps in order. If one step fails, stop there and fix it before moving on.
+
+## 1. Prerequisites
+
+You need these installed on the machine where you develop:
+
+- Node.js 24 or newer
+- npm 11 or newer
+- Git
+- Docker Desktop or Docker Engine if you want to run Supabase locally
+- `pdftotext` from the Poppler tools package
+
+On Ubuntu or Debian, install `pdftotext` like this:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y poppler-utils
+```
+
+Check the basics:
+
+```bash
+node -v
+npm -v
+git --version
+pdftotext -v
+```
+
+## 2. Start the Web App
+
+From the repository root:
+
+```bash
+npm run dev
+```
+
+Open the URL shown in the terminal. You should see the TMAGen landing page.
+
+## 3. Extract the Transcript Corpus
+
+Run the first extraction pass:
+
+```bash
+npm run extract:transcripts
+```
+
+What this does:
+
+- reads every PDF in `./tma_source_transcripts`
+- extracts text with `pdftotext`
+- removes obvious page headers and page numbers
+- writes one JSON file per episode to `./data/processed/episodes`
+- writes an `index.json` summary file
+
+If you only want to test a few files first:
+
+```bash
+node scripts/extract-transcripts.mjs --input ./tma_source_transcripts --output ./data/processed/episodes --limit 3 --overwrite
+```
+
+## 4. Create the Supabase Project
+
+1. Go to the Supabase dashboard and create a new project.
+2. Wait for provisioning to finish.
+3. In the project dashboard, copy these values:
+   - project URL
+   - anon key
+   - service role key
+4. Keep those values safe. The service role key is secret.
+
+### Apply the First Schema
+
+You have two ways to do this.
+
+### Option A: Dashboard SQL Editor
+
+This is the easiest path if you are not ready to use the CLI yet.
+
+1. Open the Supabase SQL Editor.
+2. Open the file `supabase/migrations/202603061300_initial_schema.sql` in this repo.
+3. Paste the full SQL into the editor.
+4. Run it.
+
+### Option B: Supabase CLI
+
+Use this if you want migrations to stay version-controlled and pushable from the terminal.
+
+1. Log in:
+
+```bash
+npx supabase@latest login
+```
+
+2. Link the repo to your hosted project:
+
+```bash
+npx supabase@latest link --project-ref YOUR_PROJECT_REF
+```
+
+3. Push the migration:
+
+```bash
+npx supabase@latest db push
+```
+
+If you want a full local Supabase stack, start it with:
+
+```bash
+npx supabase@latest start
+```
+
+That requires Docker.
+
+## 5. Configure Local Secrets for the Web App
+
+Copy the example file:
+
+```bash
+cp apps/web/.dev.vars.example apps/web/.dev.vars
+```
+
+Then edit `apps/web/.dev.vars` and fill in the real values:
+
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `OPENAI_API_KEY`
+- `SESSION_SECRET`
+
+Do not commit `.dev.vars`.
+
+## 6. Configure Cloudflare
+
+### Log In
+
+```bash
+npx --yes wrangler login
+```
+
+### Review the Worker Name
+
+Open `apps/web/wrangler.jsonc` and confirm the worker name is what you want. Right now it is set to `tmagen-web`.
+
+### Add Production Secrets
+
+Run these commands one by one:
+
+```bash
+cd apps/web
+npx --yes wrangler secret put SUPABASE_URL
+npx --yes wrangler secret put SUPABASE_ANON_KEY
+npx --yes wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+npx --yes wrangler secret put OPENAI_API_KEY
+npx --yes wrangler secret put SESSION_SECRET
+```
+
+When Wrangler prompts you, paste the real value for each secret.
+
+### Deploy
+
+From the repository root:
+
+```bash
+npm run deploy:web
+```
+
+## 7. MCP Servers
+
+There are two parts here:
+
+- the server URL
+- the client configuration format
+
+The server URLs are the stable part:
+
+- Cloudflare docs MCP: `https://docs.mcp.cloudflare.com/sse`
+- Cloudflare bindings MCP: `https://bindings.mcp.cloudflare.com/sse`
+- Supabase MCP: `https://mcp.supabase.com/mcp`
+
+The client configuration format depends on what tool you want to use them from. Your current local files show:
+
+- Codex config at `/home/kpjack/.codex/config.toml`
+- VS Code MCP config at `/home/kpjack/.config/Code/User/mcp.json`
+
+This repository does not edit those files automatically. They are outside the project workspace. If you want me to wire MCP into your local tool config next, I can do that, but it will require your approval because those files are outside the repo.
+
+## 8. Recommended Next Move After Setup
+
+Once the steps above are complete, the next implementation target should be:
+
+1. Supabase client wiring in the web app
+2. auth and profile creation
+3. transcript import into Supabase
+4. transcript dashboard
+5. story generation pipeline
