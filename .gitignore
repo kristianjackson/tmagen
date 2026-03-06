@@ -3,6 +3,8 @@
 .env.*
 !.env.example
 
+node_modules/
+
 tma_source_transcripts/
 data/processed/episodes/*
 !data/processed/episodes/.gitkeep

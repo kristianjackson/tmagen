@@ -1,4 +1,5 @@
 import {
+  data,
   isRouteErrorResponse,
   Links,
   Meta,
@@ -9,6 +10,9 @@ import {
 
 import type { Route } from "./+types/root";
 import "./app.css";
+import { getPublicEnv, type AppEnv } from "./lib/env.server";
+import { serializePublicEnvScript } from "./lib/public-env";
+import { getViewer } from "./lib/viewer.server";
 
 export const links: Route.LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -22,6 +26,19 @@ export const links: Route.LinksFunction = () => [
     href: "https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,400;7..72,500;7..72,700&family=Manrope:wght@400;500;600;700;800&display=swap",
   },
 ];
+
+export async function loader({ request, context }: Route.LoaderArgs) {
+  const env = context.cloudflare.env as AppEnv;
+  const { responseHeaders, viewer } = await getViewer({ env, request });
+
+  return data(
+    {
+      publicEnv: getPublicEnv(env),
+      viewer,
+    },
+    { headers: responseHeaders },
+  );
+}
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
@@ -41,8 +58,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default function App() {
-  return <Outlet />;
+export default function App({ loaderData }: Route.ComponentProps) {
+  return (
+    <>
+      <script
+        suppressHydrationWarning
+        dangerouslySetInnerHTML={{
+          __html: serializePublicEnvScript(loaderData.publicEnv),
+        }}
+      />
+      <Outlet />
+    </>
+  );
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {

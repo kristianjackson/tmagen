@@ -1,4 +1,7 @@
 import type { Route } from "./+types/home";
+import { Link, useRouteLoaderData } from "react-router";
+
+import type { loader as rootLoader } from "../root";
 
 const publicStories = [
   {
@@ -64,6 +67,9 @@ export function meta({}: Route.MetaArgs) {
 }
 
 export default function Home() {
+  const rootData = useRouteLoaderData<typeof rootLoader>("root");
+  const viewer = rootData?.viewer;
+
   return (
     <main className="relative overflow-hidden">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-[radial-gradient(circle_at_top,rgba(199,75,56,0.22),transparent_60%)]" />
@@ -77,8 +83,16 @@ export default function Home() {
               Cloudflare-hosted archive fiction engine
             </p>
           </div>
-          <div className="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">
-            Foundation pass
+          <div className="flex items-center gap-3">
+            <Link
+              to={viewer ? "/account" : "/auth"}
+              className="rounded-full border border-stone-700 bg-stone-900/70 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-stone-100 transition hover:border-stone-500 hover:bg-stone-900"
+            >
+              {viewer ? "Open Workspace" : "Sign In"}
+            </Link>
+            <div className="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">
+              Foundation pass
+            </div>
           </div>
         </header>
 
@@ -95,6 +109,20 @@ export default function Home() {
               explicit fear selection, canon controls, and versioned rewrites are part of the product
               model rather than bolted on after the fact.
             </p>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Link
+                to={viewer ? "/account" : "/auth"}
+                className="rounded-full border border-amber-400/40 bg-amber-500/15 px-5 py-3 text-sm font-semibold uppercase tracking-[0.22em] text-amber-100 transition hover:border-amber-300/60 hover:bg-amber-500/25"
+              >
+                {viewer ? `Continue as ${viewer.user.displayName}` : "Create Account"}
+              </Link>
+              <a
+                href="https://github.com/kristianjackson/tmagen"
+                className="rounded-full border border-stone-700 bg-stone-950/80 px-5 py-3 text-sm font-semibold uppercase tracking-[0.22em] text-stone-100 transition hover:border-stone-500 hover:bg-stone-900"
+              >
+                View Repository
+              </a>
+            </div>
             <div className="mt-8 flex flex-wrap gap-3">
               {productPillars.map((pillar) => (
                 <span
