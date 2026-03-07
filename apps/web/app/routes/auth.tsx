@@ -1,6 +1,10 @@
 import { data, Form, Link, redirect, useNavigation } from "react-router";
 
 import type { Route } from "./+types/auth";
+import {
+  buildAuthCallbackUrl,
+  getSafeNextPath,
+} from "../lib/auth-redirect";
 import type { AppEnv } from "../lib/env.server";
 import { createSupabaseServerClient } from "../lib/supabase/server";
 import { getViewer } from "../lib/viewer.server";
@@ -29,14 +33,16 @@ export function meta({}: Route.MetaArgs) {
 
 export async function loader({ request, context }: Route.LoaderArgs) {
   const env = context.cloudflare.env as AppEnv;
-  const next = getSafeNextPath(new URL(request.url).searchParams.get("next"));
+  const url = new URL(request.url);
+  const next = getSafeNextPath(url.searchParams.get("next"));
+  const redirectError = normalizeQueryMessage(url.searchParams.get("error"));
   const { responseHeaders, viewer } = await getViewer({ env, request });
 
   if (viewer) {
     return redirect(next, { headers: responseHeaders });
   }
 
-  return data({ next }, { headers: responseHeaders });
+  return data({ next, redirectError }, { headers: responseHeaders });
 }
 
 export async function action({ request, context }: Route.ActionArgs) {
@@ -84,6 +90,7 @@ export async function action({ request, context }: Route.ActionArgs) {
         data: {
           display_name: displayName,
         },
+        emailRedirectTo: buildAuthCallbackUrl(request, next),
       },
     });
 
@@ -145,6 +152,8 @@ export async function action({ request, context }: Route.ActionArgs) {
 export default function Auth({ actionData, loaderData }: Route.ComponentProps) {
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
+  const errorMessage = actionData?.error ?? loaderData.redirectError;
+  const formAction = `/auth?next=${encodeURIComponent(loaderData.next)}`;
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-6xl px-6 py-10 lg:px-10">
@@ -195,9 +204,9 @@ export default function Auth({ actionData, loaderData }: Route.ComponentProps) {
         </aside>
 
         <div className="space-y-6">
-          {actionData?.error ? (
+          {errorMessage ? (
             <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-100">
-              {actionData.error}
+              {errorMessage}
             </div>
           ) : null}
           {actionData?.success ? (
@@ -210,7 +219,7 @@ export default function Auth({ actionData, loaderData }: Route.ComponentProps) {
             <p className="text-xs font-semibold uppercase tracking-[0.32em] text-stone-500">
               Sign in
             </p>
-            <Form method="post" className="mt-5 space-y-4">
+            <Form method="post" action={formAction} className="mt-5 space-y-4">
               <input type="hidden" name="intent" value="sign-in" />
               <input type="hidden" name="next" value={loaderData.next} />
               <label className="block space-y-2">
@@ -250,7 +259,7 @@ export default function Auth({ actionData, loaderData }: Route.ComponentProps) {
             <p className="text-xs font-semibold uppercase tracking-[0.32em] text-stone-500">
               Create account
             </p>
-            <Form method="post" className="mt-5 space-y-4">
+            <Form method="post" action={formAction} className="mt-5 space-y-4">
               <input type="hidden" name="intent" value="sign-up" />
               <input type="hidden" name="next" value={loaderData.next} />
               <label className="block space-y-2">
@@ -305,14 +314,11 @@ export default function Auth({ actionData, loaderData }: Route.ComponentProps) {
   );
 }
 
-function getSafeNextPath(value: FormDataEntryValue | string | null) {
-  if (typeof value !== "string" || value.length === 0) {
-    return "/account";
+function normalizeQueryMessage(value: string | null) {
+  if (typeof value !== "string") {
+    return undefined;
   }
 
-  if (!value.startsWith("/") || value.startsWith("//")) {
-    return "/account";
-  }
-
-  return value;
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : undefined;
 }

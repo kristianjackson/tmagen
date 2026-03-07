@@ -113,6 +113,29 @@ npx supabase@latest start
 
 That requires Docker.
 
+### Configure Supabase Auth URLs
+
+Open Supabase Dashboard -> Authentication -> URL Configuration.
+
+Set:
+
+- Site URL: your active app origin
+- Redirect URLs: include the auth callback URL for every environment you use
+
+For the current deployed Worker, add:
+
+```text
+https://tmagen-web.kristian-jackson.workers.dev/auth/callback
+```
+
+For local development, add the callback URL that matches whatever `npm run dev` prints, for example:
+
+```text
+http://localhost:5173/auth/callback
+```
+
+If the Site URL is left on `http://localhost:3000`, Supabase confirmation emails will redirect there.
+
 ## 5. Configure Local Secrets for the Web App
 
 Copy the example file:
