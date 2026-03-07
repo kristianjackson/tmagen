@@ -66,7 +66,12 @@ type StoryEpisodeLink = {
 
 type ActionData = {
   error: string;
-  intent: "create-project" | "delete-draft" | "generate-draft" | "update-project";
+  intent:
+    | "create-project"
+    | "delete-draft"
+    | "delete-project"
+    | "generate-draft"
+    | "update-project";
   fields: {
     title?: string;
     summary?: string | null;
@@ -102,11 +107,14 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const adminClient = createSupabaseAdminClient(env);
   const url = new URL(request.url);
   const selectedProjectSlug = url.searchParams.get("project");
+  const didDeleteProject = url.searchParams.get("projectDeleted") === "1";
   const didDelete = url.searchParams.get("deleted") === "1";
   const didGenerate = url.searchParams.get("generated") === "1";
   const flash =
     url.searchParams.get("created") === "1"
       ? "Story brief created."
+      : didDeleteProject
+        ? "Story project deleted."
       : didDelete
         ? "Draft deleted."
       : didGenerate
@@ -278,6 +286,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     {
       fearOptions,
       flash,
+      didDeleteProject,
       didGenerate,
       didDelete,
       projects,
@@ -464,6 +473,62 @@ export async function action({ request, context }: Route.ActionArgs) {
     });
   }
 
+  if (intent === "delete-project") {
+    if (!fields.projectId) {
+      return data<ActionData>(
+        {
+          error: "Missing story project.",
+          fields: {
+            projectId: fields.projectId,
+          },
+          intent: "delete-project",
+        },
+        { headers: responseHeaders, status: 400 },
+      );
+    }
+
+    const { data: projectRow, error: projectError } = await supabase
+      .from("story_projects")
+      .select("id")
+      .eq("id", fields.projectId)
+      .single();
+
+    if (projectError || !projectRow) {
+      return data<ActionData>(
+        {
+          error: `Failed to load story project: ${projectError?.message ?? "Unknown error"}`,
+          fields: {
+            projectId: fields.projectId,
+          },
+          intent: "delete-project",
+        },
+        { headers: responseHeaders, status: 400 },
+      );
+    }
+
+    const { error: deleteError } = await supabase
+      .from("story_projects")
+      .delete()
+      .eq("id", projectRow.id);
+
+    if (deleteError) {
+      return data<ActionData>(
+        {
+          error: `Failed to delete story project: ${deleteError.message}`,
+          fields: {
+            projectId: fields.projectId,
+          },
+          intent: "delete-project",
+        },
+        { headers: responseHeaders, status: 400 },
+      );
+    }
+
+    return redirect("/workspace?projectDeleted=1#project-list", {
+      headers: responseHeaders,
+    });
+  }
+
   if (intent === "create-project" || intent === "update-project") {
     if (!fields.title) {
       return data<ActionData>(
@@ -612,6 +677,7 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
   const {
     fearOptions,
     flash,
+    didDeleteProject,
     didDelete,
     didGenerate,
     projects,
@@ -712,6 +778,14 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
               Jump to latest draft
             </a>
           ) : null}
+          {didDeleteProject ? (
+            <a
+              href="#project-list"
+              className="ml-3 font-semibold text-emerald-50 underline underline-offset-4"
+            >
+              Back to projects
+            </a>
+          ) : null}
           {didDelete ? (
             <a
               href="#story-versions"
@@ -805,7 +879,10 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
             </Form>
           </article>
 
-          <article className="rounded-[2rem] border border-stone-800/80 bg-stone-950/75 p-4">
+          <article
+            id="project-list"
+            className="rounded-[2rem] border border-stone-800/80 bg-stone-950/75 p-4"
+          >
             <div className="border-b border-stone-800 px-3 pb-4">
               <p className="text-xs font-semibold uppercase tracking-[0.32em] text-stone-500">
                 Your projects
@@ -1030,6 +1107,15 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
                     {isSubmitting ? "Generating..." : "Generate draft version"}
                   </button>
                 </Form>
+
+                <div className="mt-5 flex justify-end">
+                  <DeleteProjectButton
+                    isSubmitting={isSubmitting}
+                    projectId={selectedProject.id}
+                    projectTitle={selectedProject.title}
+                    versionCount={selectedProject.versionCount}
+                  />
+                </div>
               </article>
 
               <article className="rounded-[2rem] border border-stone-800/80 bg-stone-950/75 p-6">
@@ -1383,6 +1469,43 @@ function DeleteDraftButton({
         className="rounded-full border border-red-500/35 bg-red-500/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-red-100 transition hover:border-red-400/55 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
       >
         Delete draft
+      </button>
+    </Form>
+  );
+}
+
+function DeleteProjectButton({
+  isSubmitting,
+  projectId,
+  projectTitle,
+  versionCount,
+}: {
+  isSubmitting: boolean;
+  projectId: string;
+  projectTitle: string;
+  versionCount: number;
+}) {
+  return (
+    <Form method="post">
+      <input type="hidden" name="intent" value="delete-project" />
+      <input type="hidden" name="projectId" value={projectId} />
+      <button
+        type="submit"
+        disabled={isSubmitting}
+        onClick={(event) => {
+          const draftLabel = versionCount === 1 ? "1 draft" : `${versionCount} drafts`;
+
+          if (
+            !window.confirm(
+              `Delete project "${projectTitle}"? This removes the brief, ${draftLabel}, and all saved provenance under it.`,
+            )
+          ) {
+            event.preventDefault();
+          }
+        }}
+        className="rounded-full border border-red-500/35 bg-red-500/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-red-100 transition hover:border-red-400/55 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        Delete project
       </button>
     </Form>
   );
