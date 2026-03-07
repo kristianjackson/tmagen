@@ -725,6 +725,19 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
             visibility: selectedProject.visibility,
           }
         : null;
+  const selectedVersionUsage = selectedVersion
+    ? readOpenAiUsage(selectedVersion.generationMetadata)
+    : {
+        completionTokens: null,
+        promptTokens: null,
+        totalTokens: null,
+      };
+  const selectedVersionSourceCount = selectedVersion?.retrievalSnapshot.length ?? 0;
+  const historicalVersions =
+    selectedVersion && selectedProjectVersions.length > 0
+      ? selectedProjectVersions.slice(1)
+      : selectedProjectVersions;
+  const selectedDraft = selectedVersion ? splitDraftMarkdown(selectedVersion.contentMarkdown) : null;
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-[1480px] px-6 py-10 lg:px-10">
@@ -788,7 +801,7 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
           ) : null}
           {didDelete ? (
             <a
-              href="#story-versions"
+              href="#version-history"
               className="ml-3 font-semibold text-emerald-50 underline underline-offset-4"
             >
               Back to story versions
@@ -818,6 +831,152 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
           value={formatNumber(summary.publicProjectCount)}
         />
       </section>
+
+      {selectedProject && selectedVersion && selectedDraft ? (
+        <section className="mt-8 grid gap-6 xl:grid-cols-[minmax(0,1.18fr)_360px]">
+          <article
+            id="latest-draft"
+            className="relative overflow-hidden rounded-[2rem] border border-stone-800/80 bg-stone-950/80 p-6"
+          >
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(245,158,11,0.16),transparent_42%),radial-gradient(circle_at_bottom_right,rgba(14,165,233,0.12),transparent_38%)]" />
+            <div className="relative">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.32em] text-amber-300">
+                    Active Draft
+                  </p>
+                  <h2 className="mt-4 font-display text-5xl leading-tight text-stone-50">
+                    {selectedDraft.title ?? selectedProject.title}
+                  </h2>
+                  <p className="mt-4 max-w-3xl text-sm leading-7 text-stone-300">
+                    This draft was generated from the source packet below and saved as version{" "}
+                    {selectedVersion.versionNumber}. The preview and the generator use the same
+                    retrieval query and packet, and that packet is persisted on the draft as its
+                    retrieval snapshot.
+                  </p>
+                </div>
+
+                <div className="rounded-[1.5rem] border border-stone-800 bg-stone-900/80 p-4 text-sm text-stone-300">
+                  <p>
+                    <span className="text-stone-500">Version:</span>{" "}
+                    {selectedVersion.versionNumber}
+                  </p>
+                  <p className="mt-2">
+                    <span className="text-stone-500">Model:</span>{" "}
+                    {selectedVersion.modelName ?? "Unknown"}
+                  </p>
+                  <p className="mt-2">
+                    <span className="text-stone-500">Created:</span>{" "}
+                    {formatDate(selectedVersion.createdAt)}
+                  </p>
+                </div>
+              </div>
+
+              <pre className="mt-8 max-h-[980px] overflow-auto whitespace-pre-wrap rounded-[1.6rem] border border-stone-800 bg-stone-950/90 p-6 text-[15px] leading-8 text-stone-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                {selectedDraft.body}
+              </pre>
+            </div>
+          </article>
+
+          <aside className="space-y-6">
+            <article className="rounded-[2rem] border border-stone-800/80 bg-stone-950/75 p-5">
+              <p className="text-xs font-semibold uppercase tracking-[0.32em] text-stone-500">
+                Draft Context
+              </p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+                <DraftContextStat
+                  label="Packet chunks"
+                  value={formatNumber(selectedVersionSourceCount)}
+                />
+                <DraftContextStat
+                  label="Linked episodes"
+                  value={formatNumber(selectedVersionLinks.length)}
+                />
+                <DraftContextStat
+                  label="Prompt tokens"
+                  value={formatMetricNumber(selectedVersionUsage.promptTokens)}
+                />
+                <DraftContextStat
+                  label="Completion tokens"
+                  value={formatMetricNumber(selectedVersionUsage.completionTokens)}
+                />
+                <DraftContextStat
+                  label="Total tokens"
+                  value={formatMetricNumber(selectedVersionUsage.totalTokens)}
+                />
+              </div>
+
+              <div className="mt-5 grid gap-3">
+                <a
+                  href="#source-packet"
+                  className="rounded-[1.2rem] border border-stone-800 bg-stone-900/80 px-4 py-3 text-sm text-stone-200 transition hover:border-stone-600"
+                >
+                  Source packet preview
+                </a>
+                <a
+                  href="#project-brief"
+                  className="rounded-[1.2rem] border border-stone-800 bg-stone-900/80 px-4 py-3 text-sm text-stone-200 transition hover:border-stone-600"
+                >
+                  Brief controls
+                </a>
+                <a
+                  href="#version-history"
+                  className="rounded-[1.2rem] border border-stone-800 bg-stone-900/80 px-4 py-3 text-sm text-stone-200 transition hover:border-stone-600"
+                >
+                  Version history
+                </a>
+              </div>
+
+              <div className="mt-5 flex justify-end">
+                <DeleteDraftButton
+                  isSubmitting={isSubmitting}
+                  projectId={selectedProject.id}
+                  versionId={selectedVersion.id}
+                  versionNumber={selectedVersion.versionNumber}
+                />
+              </div>
+            </article>
+
+            <article className="rounded-[2rem] border border-stone-800/80 bg-stone-950/75 p-5">
+              <p className="text-xs font-semibold uppercase tracking-[0.32em] text-stone-500">
+                Archive Material Used
+              </p>
+              <p className="mt-3 text-sm leading-7 text-stone-300">
+                These episode links were written when the draft was saved. They come from the same
+                retrieval packet used during generation.
+              </p>
+
+              {selectedVersionLinks.length > 0 ? (
+                <div className="mt-4 grid gap-3">
+                  {selectedVersionLinks.map((link) => (
+                    <article
+                      key={link.episodeId}
+                      className="rounded-[1.2rem] border border-stone-800 bg-stone-900/80 p-4"
+                    >
+                      <p className="text-xs uppercase tracking-[0.24em] text-stone-500">
+                        MAG {String(link.episodeNumber).padStart(3, "0")}
+                      </p>
+                      <h3 className="mt-2 font-display text-2xl text-stone-50">
+                        {link.episodeTitle}
+                      </h3>
+                      <p className="mt-3 text-sm text-stone-300">
+                        {formatNumber(link.chunkIds.length)} chunks ·{" "}
+                        {link.relevanceScore !== null
+                          ? `relevance ${link.relevanceScore.toFixed(3)}`
+                          : "not scored"}
+                      </p>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-4 text-sm leading-7 text-stone-400">
+                  No persisted provenance links were found for this draft.
+                </p>
+              )}
+            </article>
+          </aside>
+        </section>
+      ) : null}
 
       <section className="mt-8 grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
         <aside className="space-y-6">
@@ -956,7 +1115,10 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
         <section className="space-y-6">
           {selectedProject ? (
             <>
-              <article className="rounded-[2rem] border border-stone-800/80 bg-stone-950/75 p-6">
+              <article
+                id="project-brief"
+                className="rounded-[2rem] border border-stone-800/80 bg-stone-950/75 p-6"
+              >
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.32em] text-stone-500">
@@ -1118,7 +1280,10 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
                 </div>
               </article>
 
-              <article className="rounded-[2rem] border border-stone-800/80 bg-stone-950/75 p-6">
+              <article
+                id="source-packet"
+                className="rounded-[2rem] border border-stone-800/80 bg-stone-950/75 p-6"
+              >
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.32em] text-stone-500">
@@ -1127,6 +1292,11 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
                     <h3 className="mt-3 font-display text-3xl text-stone-50">
                       Source packet preview for this brief
                     </h3>
+                    <p className="mt-3 max-w-3xl text-sm leading-7 text-stone-300">
+                      This packet is not a separate preview-only artifact. The generator uses this
+                      retrieval query and source packet directly, then stores the resulting packet on
+                      each draft as `retrieval_snapshot`.
+                    </p>
                   </div>
 
                   {retrieval ? (
@@ -1218,113 +1388,31 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
               </article>
 
               <article
-                id="story-versions"
+                id="version-history"
                 className="rounded-[2rem] border border-stone-800/80 bg-stone-950/75 p-6"
               >
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.32em] text-stone-500">
-                      Story versions
+                      Version history
                     </p>
                     <h3 className="mt-3 font-display text-3xl text-stone-50">
-                      Immutable drafts and provenance snapshots
+                      Older snapshots stay here
                     </h3>
+                    <p className="mt-3 text-sm leading-7 text-stone-300">
+                      The active draft is surfaced above. This section keeps the rest of the immutable
+                      version chain available for rollback and comparison.
+                    </p>
                   </div>
                   <span className="rounded-full border border-stone-700 px-3 py-1 text-xs uppercase tracking-[0.22em] text-stone-300">
                     {selectedProjectVersions.length} versions
                   </span>
                 </div>
 
-                {selectedProjectVersions.length > 0 ? (
+                {historicalVersions.length > 0 ? (
                   <div className="mt-6 space-y-6">
-                    {selectedVersion ? (
-                      <article
-                        id="latest-draft"
-                        className="rounded-[1.5rem] border border-stone-800 bg-stone-900/75 p-5"
-                      >
-                        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                          <div>
-                            <p className="text-xs uppercase tracking-[0.24em] text-stone-500">
-                              Latest draft
-                            </p>
-                            <h4 className="mt-2 font-display text-3xl text-stone-50">
-                              Version {selectedVersion.versionNumber}
-                            </h4>
-                          </div>
-                          <div className="text-sm text-stone-300">
-                            <p>
-                              <span className="text-stone-500">Model:</span>{" "}
-                              {selectedVersion.modelName ?? "Unknown"}
-                            </p>
-                            <p className="mt-2">
-                              <span className="text-stone-500">Created:</span>{" "}
-                              {formatDate(selectedVersion.createdAt)}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="mt-5 flex justify-end">
-                          <DeleteDraftButton
-                            isSubmitting={isSubmitting}
-                            projectId={selectedProject.id}
-                            versionId={selectedVersion.id}
-                            versionNumber={selectedVersion.versionNumber}
-                          />
-                        </div>
-
-                        <pre className="mt-6 max-h-[900px] overflow-auto whitespace-pre-wrap rounded-[1.4rem] border border-stone-800 bg-stone-950/80 p-5 text-sm leading-7 text-stone-200">
-                          {selectedVersion.contentMarkdown}
-                        </pre>
-                      </article>
-                    ) : null}
-
-                    {selectedVersionLinks.length > 0 ? (
-                      <article className="rounded-[1.5rem] border border-stone-800 bg-stone-900/75 p-5">
-                        <p className="text-xs uppercase tracking-[0.24em] text-stone-500">
-                          Latest draft provenance
-                        </p>
-                        <div className="mt-4 grid gap-3">
-                          {selectedVersionLinks.map((link) => (
-                            <article
-                              key={link.episodeId}
-                              className="rounded-[1.2rem] border border-stone-800 bg-stone-950/80 p-4"
-                            >
-                              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                                <div>
-                                  <p className="text-xs uppercase tracking-[0.24em] text-stone-500">
-                                    MAG {String(link.episodeNumber).padStart(3, "0")}
-                                  </p>
-                                  <h5 className="mt-2 font-display text-2xl text-stone-50">
-                                    {link.episodeTitle}
-                                  </h5>
-                                </div>
-                                <div className="text-sm text-stone-300">
-                                  <p>
-                                    <span className="text-stone-500">Chunks:</span>{" "}
-                                    {formatNumber(link.chunkIds.length)}
-                                  </p>
-                                  <p className="mt-2">
-                                    <span className="text-stone-500">Relevance:</span>{" "}
-                                    {link.relevanceScore !== null
-                                      ? link.relevanceScore.toFixed(3)
-                                      : "Not scored"}
-                                  </p>
-                                </div>
-                              </div>
-
-                              {link.usageReason ? (
-                                <p className="mt-4 text-sm leading-6 text-stone-300">
-                                  {link.usageReason}
-                                </p>
-                              ) : null}
-                            </article>
-                          ))}
-                        </div>
-                      </article>
-                    ) : null}
-
                     <div className="grid gap-3">
-                      {selectedProjectVersions.map((version) => (
+                      {historicalVersions.map((version) => (
                         <article
                           key={version.id}
                           className="rounded-[1.4rem] border border-stone-800 bg-stone-900/70 p-4"
@@ -1350,16 +1438,14 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
                             </div>
                           </div>
 
-                          {selectedVersion?.id !== version.id ? (
-                            <div className="mt-4 flex justify-end">
-                              <DeleteDraftButton
-                                isSubmitting={isSubmitting}
-                                projectId={selectedProject.id}
-                                versionId={version.id}
-                                versionNumber={version.versionNumber}
-                              />
-                            </div>
-                          ) : null}
+                          <div className="mt-4 flex justify-end">
+                            <DeleteDraftButton
+                              isSubmitting={isSubmitting}
+                              projectId={selectedProject.id}
+                              versionId={version.id}
+                              versionNumber={version.versionNumber}
+                            />
+                          </div>
 
                           {version.revisionNotes ? (
                             <p className="mt-4 text-sm leading-6 text-stone-300">
@@ -1372,8 +1458,9 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
                   </div>
                 ) : (
                   <p className="mt-6 text-sm leading-7 text-stone-400">
-                    No draft exists yet. Generate the first immutable story version to capture the
-                    prompt snapshot, retrieval packet, and source links.
+                    {selectedVersion
+                      ? "No earlier drafts yet. Generate again when you want a second immutable version in the chain."
+                      : "No draft exists yet. Generate the first immutable story version to capture the prompt snapshot, retrieval packet, and source links."}
                   </p>
                 )}
               </article>
@@ -1434,6 +1521,15 @@ function WorkspaceSummaryCard({ label, value }: { label: string; value: string }
     <article className="rounded-[1.6rem] border border-stone-800/80 bg-stone-950/70 p-5">
       <p className="text-xs font-semibold uppercase tracking-[0.28em] text-stone-500">{label}</p>
       <p className="mt-4 font-display text-4xl text-stone-50">{value}</p>
+    </article>
+  );
+}
+
+function DraftContextStat({ label, value }: { label: string; value: string }) {
+  return (
+    <article className="rounded-[1.2rem] border border-stone-800 bg-stone-900/80 p-4">
+      <p className="text-[11px] uppercase tracking-[0.24em] text-stone-500">{label}</p>
+      <p className="mt-3 font-display text-3xl text-stone-50">{value}</p>
     </article>
   );
 }
@@ -1650,12 +1746,55 @@ function formatDate(value: string | null) {
   }).format(new Date(value));
 }
 
+function formatMetricNumber(value: number | null) {
+  if (value === null) {
+    return "n/a";
+  }
+
+  return formatNumber(value);
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return {};
   }
 
   return value as Record<string, unknown>;
+}
+
+function readOpenAiUsage(metadata: Record<string, unknown>) {
+  const usage = asRecord(metadata.openai_usage);
+
+  return {
+    completionTokens: readOptionalNumber(usage.completion_tokens),
+    promptTokens: readOptionalNumber(usage.prompt_tokens),
+    totalTokens: readOptionalNumber(usage.total_tokens),
+  };
+}
+
+function readOptionalNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.trunc(value);
+  }
+
+  return null;
+}
+
+function splitDraftMarkdown(markdown: string) {
+  const normalized = markdown.trim();
+  const [firstLine, ...rest] = normalized.split("\n");
+
+  if (firstLine?.startsWith("# ")) {
+    return {
+      body: rest.join("\n").trim(),
+      title: firstLine.slice(2).trim(),
+    };
+  }
+
+  return {
+    body: normalized,
+    title: null,
+  };
 }
 
 function formatError(error: unknown) {
