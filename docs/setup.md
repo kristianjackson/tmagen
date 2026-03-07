@@ -225,7 +225,43 @@ What this does:
 
 If a call fails, that episode is marked `metadata_failed` so you can re-run just the missing records or use `--force`.
 
-## 8. Configure Cloudflare
+## 8. Generate Chunk Embeddings
+
+Once episode metadata is in place, backfill chunk embeddings for vector search and seed chunk fear tags
+from the episode taxonomy.
+
+Start with a dry run:
+
+```bash
+npm run generate:embeddings -- --dry-run
+```
+
+Then run the real job:
+
+```bash
+npm run generate:embeddings
+```
+
+Useful filters while you tune batch size or recover from an interrupted run:
+
+```bash
+npm run generate:embeddings -- --episode 32
+npm run generate:embeddings -- --limit 50
+npm run generate:embeddings -- --reset --episode 32
+```
+
+What this does:
+
+- reads `episode_chunks` from Supabase using the service-role key in `apps/web/.dev.vars`
+- requests embeddings from the configured OpenAI embedding model
+- writes `episode_chunks.embedding`
+- seeds `episode_chunks.fear_slugs` from the episode-level fear assignments
+- stores `embedding_model` and `embedding_generated_at` in chunk metadata for auditability
+
+After this finishes, sign in to `/account` and use the hybrid retrieval probe to test vector plus lexical
+chunk search before story generation exists.
+
+## 9. Configure Cloudflare
 
 ### Log In
 
@@ -260,7 +296,7 @@ From the repository root:
 npm run deploy:web
 ```
 
-## 9. MCP Servers
+## 10. MCP Servers
 
 There are two parts here:
 
@@ -310,11 +346,11 @@ codex mcp add cloudflare-bindings --url https://bindings.mcp.cloudflare.com/mcp
 
 If a client prompts for OAuth when you first use a server, complete that in the browser.
 
-## 10. Recommended Next Move After Setup
+## 11. Recommended Next Move After Setup
 
 Once the steps above are complete, the next implementation target should be:
 
-1. embeddings and hybrid retrieval
-2. creator-side story project workflow
-3. draft generation and revision history
+1. creator-side story project workflow
+2. draft generation and revision history
+3. provenance links from generated drafts back to chunk retrieval hits
 4. the public archive feed
