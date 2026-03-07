@@ -92,7 +92,9 @@ create table public.episode_chunks (
   fear_slugs text[] not null default '{}',
   embedding vector(1536),
   metadata jsonb not null default '{}'::jsonb,
-  search_vector tsvector generated always as to_tsvector('english', coalesce(content, '')) stored,
+  search_vector tsvector generated always as (
+    to_tsvector('english', coalesce(content, ''))
+  ) stored,
   created_at timestamptz not null default timezone('utc', now()),
   unique (episode_id, chunk_index)
 );
