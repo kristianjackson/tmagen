@@ -66,7 +66,7 @@ type StoryEpisodeLink = {
 
 type ActionData = {
   error: string;
-  intent: "create-project" | "generate-draft" | "update-project";
+  intent: "create-project" | "delete-draft" | "generate-draft" | "update-project";
   fields: {
     title?: string;
     summary?: string | null;
@@ -76,6 +76,7 @@ type ActionData = {
     visibility?: string;
     projectId?: string;
     selectedFearSlugs?: string[];
+    versionId?: string;
   };
 };
 
@@ -101,10 +102,13 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const adminClient = createSupabaseAdminClient(env);
   const url = new URL(request.url);
   const selectedProjectSlug = url.searchParams.get("project");
+  const didDelete = url.searchParams.get("deleted") === "1";
   const didGenerate = url.searchParams.get("generated") === "1";
   const flash =
     url.searchParams.get("created") === "1"
       ? "Story brief created."
+      : didDelete
+        ? "Draft deleted."
       : didGenerate
         ? "Draft generated."
       : url.searchParams.get("saved") === "1"
@@ -275,6 +279,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
       fearOptions,
       flash,
       didGenerate,
+      didDelete,
       projects,
       retrieval,
       selectedProject,
@@ -314,6 +319,7 @@ export async function action({ request, context }: Route.ActionArgs) {
       .filter(Boolean),
     summary: normalizeTextarea(formData.get("summary")),
     title: normalizeTitle(formData.get("title")),
+    versionId: String(formData.get("versionId") ?? ""),
     visibility: String(formData.get("visibility") ?? "private"),
   };
 
@@ -383,6 +389,77 @@ export async function action({ request, context }: Route.ActionArgs) {
     }
 
     return redirect(`/workspace?project=${projectRow.slug}&generated=1#latest-draft`, {
+      headers: responseHeaders,
+    });
+  }
+
+  if (intent === "delete-draft") {
+    if (!fields.projectId || !fields.versionId) {
+      return data<ActionData>(
+        {
+          error: "Missing story project or draft version.",
+          fields: {
+            projectId: fields.projectId,
+            versionId: fields.versionId,
+          },
+          intent: "delete-draft",
+        },
+        { headers: responseHeaders, status: 400 },
+      );
+    }
+
+    const { data: versionRow, error: versionError } = await supabase
+      .from("story_versions")
+      .select("id, story_project_id, story_projects!inner(slug)")
+      .eq("id", fields.versionId)
+      .eq("story_project_id", fields.projectId)
+      .single();
+
+    if (versionError || !versionRow) {
+      return data<ActionData>(
+        {
+          error: `Failed to load draft version: ${versionError?.message ?? "Unknown error"}`,
+          fields: {
+            projectId: fields.projectId,
+            versionId: fields.versionId,
+          },
+          intent: "delete-draft",
+        },
+        { headers: responseHeaders, status: 400 },
+      );
+    }
+
+    const { error: deleteError } = await supabase
+      .from("story_versions")
+      .delete()
+      .eq("id", versionRow.id);
+
+    if (deleteError) {
+      return data<ActionData>(
+        {
+          error: `Failed to delete draft version: ${deleteError.message}`,
+          fields: {
+            projectId: fields.projectId,
+            versionId: fields.versionId,
+          },
+          intent: "delete-draft",
+        },
+        { headers: responseHeaders, status: 400 },
+      );
+    }
+
+    const project = Array.isArray(versionRow.story_projects)
+      ? versionRow.story_projects[0]
+      : versionRow.story_projects;
+    const projectSlug = project?.slug;
+
+    if (!projectSlug) {
+      return redirect("/workspace?deleted=1#story-versions", {
+        headers: responseHeaders,
+      });
+    }
+
+    return redirect(`/workspace?project=${projectSlug}&deleted=1#story-versions`, {
       headers: responseHeaders,
     });
   }
@@ -535,6 +612,7 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
   const {
     fearOptions,
     flash,
+    didDelete,
     didGenerate,
     projects,
     retrieval,
@@ -632,6 +710,14 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
               className="ml-3 font-semibold text-emerald-50 underline underline-offset-4"
             >
               Jump to latest draft
+            </a>
+          ) : null}
+          {didDelete ? (
+            <a
+              href="#story-versions"
+              className="ml-3 font-semibold text-emerald-50 underline underline-offset-4"
+            >
+              Back to story versions
             </a>
           ) : null}
         </div>
@@ -1045,7 +1131,10 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
                 )}
               </article>
 
-              <article className="rounded-[2rem] border border-stone-800/80 bg-stone-950/75 p-6">
+              <article
+                id="story-versions"
+                className="rounded-[2rem] border border-stone-800/80 bg-stone-950/75 p-6"
+              >
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.32em] text-stone-500">
@@ -1086,6 +1175,15 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
                               {formatDate(selectedVersion.createdAt)}
                             </p>
                           </div>
+                        </div>
+
+                        <div className="mt-5 flex justify-end">
+                          <DeleteDraftButton
+                            isSubmitting={isSubmitting}
+                            projectId={selectedProject.id}
+                            versionId={selectedVersion.id}
+                            versionNumber={selectedVersion.versionNumber}
+                          />
                         </div>
 
                         <pre className="mt-6 max-h-[900px] overflow-auto whitespace-pre-wrap rounded-[1.4rem] border border-stone-800 bg-stone-950/80 p-5 text-sm leading-7 text-stone-200">
@@ -1166,6 +1264,17 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
                             </div>
                           </div>
 
+                          {selectedVersion?.id !== version.id ? (
+                            <div className="mt-4 flex justify-end">
+                              <DeleteDraftButton
+                                isSubmitting={isSubmitting}
+                                projectId={selectedProject.id}
+                                versionId={version.id}
+                                versionNumber={version.versionNumber}
+                              />
+                            </div>
+                          ) : null}
+
                           {version.revisionNotes ? (
                             <p className="mt-4 text-sm leading-6 text-stone-300">
                               {version.revisionNotes}
@@ -1240,6 +1349,42 @@ function WorkspaceSummaryCard({ label, value }: { label: string; value: string }
       <p className="text-xs font-semibold uppercase tracking-[0.28em] text-stone-500">{label}</p>
       <p className="mt-4 font-display text-4xl text-stone-50">{value}</p>
     </article>
+  );
+}
+
+function DeleteDraftButton({
+  isSubmitting,
+  projectId,
+  versionId,
+  versionNumber,
+}: {
+  isSubmitting: boolean;
+  projectId: string;
+  versionId: string;
+  versionNumber: number;
+}) {
+  return (
+    <Form method="post">
+      <input type="hidden" name="intent" value="delete-draft" />
+      <input type="hidden" name="projectId" value={projectId} />
+      <input type="hidden" name="versionId" value={versionId} />
+      <button
+        type="submit"
+        disabled={isSubmitting}
+        onClick={(event) => {
+          if (
+            !window.confirm(
+              `Delete draft version ${versionNumber}? This removes the saved draft and its provenance links.`,
+            )
+          ) {
+            event.preventDefault();
+          }
+        }}
+        className="rounded-full border border-red-500/35 bg-red-500/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-red-100 transition hover:border-red-400/55 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        Delete draft
+      </button>
+    </Form>
   );
 }
 
