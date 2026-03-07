@@ -1,10 +1,10 @@
 export function getSafeNextPath(value: FormDataEntryValue | string | null) {
   if (typeof value !== "string" || value.length === 0) {
-    return "/account";
+    return "/workspace";
   }
 
   if (!value.startsWith("/") || value.startsWith("//")) {
-    return "/account";
+    return "/workspace";
   }
 
   return value;

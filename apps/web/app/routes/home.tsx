@@ -85,13 +85,13 @@ export default function Home() {
           </div>
           <div className="flex items-center gap-3">
             <Link
-              to={viewer ? "/account" : "/auth"}
+              to={viewer ? "/workspace" : "/auth"}
               className="rounded-full border border-stone-700 bg-stone-900/70 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-stone-100 transition hover:border-stone-500 hover:bg-stone-900"
             >
               {viewer ? "Open Workspace" : "Sign In"}
             </Link>
             <div className="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">
-              Foundation pass
+              Workflow pass
             </div>
           </div>
         </header>
@@ -111,7 +111,7 @@ export default function Home() {
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link
-                to={viewer ? "/account" : "/auth"}
+                to={viewer ? "/workspace" : "/auth"}
                 className="rounded-full border border-amber-400/40 bg-amber-500/15 px-5 py-3 text-sm font-semibold uppercase tracking-[0.22em] text-amber-100 transition hover:border-amber-300/60 hover:bg-amber-500/25"
               >
                 {viewer ? `Continue as ${viewer.user.displayName}` : "Create Account"}
@@ -157,8 +157,8 @@ export default function Home() {
                 Immediate goal
               </p>
               <p className="mt-3 text-sm leading-7 text-amber-50/90">
-                Get transcript extraction, the Supabase schema, and the Cloudflare web shell locked down
-                before the generation workflow starts to sprawl.
+                Land the creator workspace and brief shaping flow so the first real draft-generation pass
+                has a durable home instead of living in ad hoc scripts.
               </p>
             </div>
           </aside>

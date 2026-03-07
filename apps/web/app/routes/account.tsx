@@ -317,6 +317,12 @@ export default function Account({ loaderData }: Route.ComponentProps) {
 
         <div className="flex items-center gap-3">
           <Link
+            to="/workspace"
+            className="rounded-full border border-stone-700 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-stone-200 transition hover:border-stone-500"
+          >
+            Workspace
+          </Link>
+          <Link
             to="/"
             className="rounded-full border border-stone-700 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-stone-200 transition hover:border-stone-500"
           >

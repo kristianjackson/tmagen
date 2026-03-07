@@ -11,6 +11,7 @@ const RRF_K = 60;
 type RetrievalFilters = {
   episodeId?: string | null;
   fearSlug?: string | null;
+  fearSlugs?: string[] | null;
 };
 
 type RetrievalOptions = RetrievalFilters & {
@@ -40,6 +41,7 @@ type LexicalMatch = {
   content: string;
   episodeId: string;
   chunkIndex: number;
+  fearSlugs: string[];
 };
 
 type ChunkDetail = {
@@ -72,6 +74,7 @@ export type RetrievalProbe = {
   query: string;
   normalizedQuery: string;
   fearSlug: string | null;
+  fearSlugs: string[];
   episodeId: string | null;
   vectorHitCount: number;
   lexicalHitCount: number;
@@ -86,12 +89,14 @@ export async function runChunkRetrievalProbe({
   query,
   episodeId,
   fearSlug,
+  fearSlugs,
   lexicalLimit = DEFAULT_LEXICAL_LIMIT,
   matchCount = DEFAULT_MATCH_COUNT,
 }: RetrievalOptions): Promise<RetrievalProbe> {
   const normalizedQuery = query.trim();
   const warnings: string[] = [];
   const limit = Math.max(lexicalLimit, matchCount, 1);
+  const requestedFearSlugs = normalizeFearSlugList({ fearSlug, fearSlugs });
 
   const [vectorOutcome, lexicalOutcome] = await Promise.all([
     runVectorSearch({
@@ -99,8 +104,8 @@ export async function runChunkRetrievalProbe({
       env,
       query: normalizedQuery,
       episodeId,
-      fearSlug,
-      matchCount: limit,
+      fearSlugs: requestedFearSlugs,
+      matchCount: requestedFearSlugs.length > 1 ? limit * 4 : limit,
     }).catch((error) => {
       warnings.push(`Vector search unavailable: ${formatError(error)}`);
       return { matches: [] as VectorMatch[], usage: null };
@@ -109,7 +114,7 @@ export async function runChunkRetrievalProbe({
       adminClient,
       query: normalizedQuery,
       episodeId,
-      fearSlug,
+      fearSlugs: requestedFearSlugs,
       limit: limit * 4,
     }).catch((error) => {
       warnings.push(`Lexical search unavailable: ${formatError(error)}`);
@@ -133,6 +138,7 @@ export async function runChunkRetrievalProbe({
 
   const fused = fuseMatches({
     chunkDetails,
+    fearSlugs: requestedFearSlugs,
     lexicalMatches,
     query: normalizedQuery,
     vectorMatches: vectorOutcome.matches,
@@ -141,7 +147,8 @@ export async function runChunkRetrievalProbe({
   return {
     query,
     normalizedQuery,
-    fearSlug: normalizeOptionalString(fearSlug),
+    fearSlug: requestedFearSlugs.length === 1 ? requestedFearSlugs[0] : null,
+    fearSlugs: requestedFearSlugs,
     episodeId: normalizeOptionalString(episodeId),
     vectorHitCount: vectorOutcome.matches.length,
     lexicalHitCount: lexicalMatches.length,
@@ -156,7 +163,7 @@ async function runVectorSearch({
   env,
   query,
   episodeId,
-  fearSlug,
+  fearSlugs = [],
   matchCount,
 }: RetrievalFilters & {
   adminClient: SupabaseClient;
@@ -165,6 +172,7 @@ async function runVectorSearch({
   matchCount: number;
 }) {
   const openAiApiKey = normalizeOptionalString(env.OPENAI_API_KEY);
+  const requestedFearSlugs = fearSlugs ?? [];
 
   if (!openAiApiKey) {
     throw new Error("OPENAI_API_KEY is not configured in the Worker environment.");
@@ -175,7 +183,10 @@ async function runVectorSearch({
     openAiApiKey,
     query,
   });
-  const filter = buildMatchFilter({ episodeId, fearSlug });
+  const filter = buildMatchFilter({
+    episodeId,
+    fearSlug: requestedFearSlugs.length === 1 ? requestedFearSlugs[0] : null,
+  });
   const { data, error } = await adminClient.rpc("match_episode_chunks", {
     filter,
     match_count: matchCount,
@@ -257,7 +268,7 @@ async function runLexicalSearch({
   adminClient,
   query,
   episodeId,
-  fearSlug,
+  fearSlugs = [],
   limit,
 }: RetrievalFilters & {
   adminClient: SupabaseClient;
@@ -265,6 +276,7 @@ async function runLexicalSearch({
   limit: number;
 }) {
   const searchTerms = extractSearchTerms(query);
+  const requestedFearSlugs = fearSlugs ?? [];
 
   if (searchTerms.length === 0) {
     return [];
@@ -272,7 +284,7 @@ async function runLexicalSearch({
 
   let search = adminClient
     .from("episode_chunks")
-    .select("id, episode_id, chunk_index, content")
+    .select("id, episode_id, chunk_index, content, fear_slugs")
     .textSearch("search_vector", query, {
       config: "english",
       type: "websearch",
@@ -283,8 +295,8 @@ async function runLexicalSearch({
     search = search.eq("episode_id", episodeId);
   }
 
-  if (fearSlug) {
-    search = search.contains("fear_slugs", [fearSlug]);
+  if (requestedFearSlugs.length === 1) {
+    search = search.contains("fear_slugs", [requestedFearSlugs[0]]);
   }
 
   const { data, error } = await search;
@@ -299,12 +311,20 @@ async function runLexicalSearch({
       content: typeof row.content === "string" ? row.content : "",
       episodeId: String(row.episode_id),
       chunkIndex: asInteger(row.chunk_index),
+      fearSlugs: Array.isArray(row.fear_slugs)
+        ? row.fear_slugs.filter((value): value is string => typeof value === "string")
+        : [],
       lexicalScore: scoreLexicalMatch({
         content: typeof row.content === "string" ? row.content : "",
         query,
         searchTerms,
       }),
     }))
+    .filter((row) =>
+      requestedFearSlugs.length === 0
+        ? true
+        : row.fearSlugs.some((fearSlug) => requestedFearSlugs.includes(fearSlug)),
+    )
     .filter((row) => row.lexicalScore > 0);
 }
 
@@ -355,11 +375,13 @@ async function loadChunkDetails(adminClient: SupabaseClient, chunkIds: string[])
 
 function fuseMatches({
   chunkDetails,
+  fearSlugs,
   lexicalMatches,
   query,
   vectorMatches,
 }: {
   chunkDetails: Map<string, ChunkDetail>;
+  fearSlugs: string[];
   lexicalMatches: LexicalMatch[];
   query: string;
   vectorMatches: VectorMatch[];
@@ -413,6 +435,10 @@ function fuseMatches({
       const detail = chunkDetails.get(result.chunkId);
 
       if (!detail) {
+        return null;
+      }
+
+      if (fearSlugs.length > 0 && !detail.fearSlugs.some((fearSlug) => fearSlugs.includes(fearSlug))) {
         return null;
       }
 
@@ -551,6 +577,19 @@ function buildMatchFilter({ episodeId, fearSlug }: RetrievalFilters) {
   }
 
   return filter;
+}
+
+function normalizeFearSlugList({
+  fearSlug,
+  fearSlugs,
+}: {
+  fearSlug?: string | null;
+  fearSlugs?: string[] | null;
+}) {
+  return dedupeStrings([
+    ...(Array.isArray(fearSlugs) ? fearSlugs : []),
+    ...(fearSlug ? [fearSlug] : []),
+  ].map((value) => value.trim()).filter((value) => value.length > 0));
 }
 
 function toPgVector(vector: number[]) {

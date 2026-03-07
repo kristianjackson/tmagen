@@ -34,7 +34,8 @@ The transcript corpus is already text-based PDF, so the ingestion path is:
 
 The current repository scripts cover deterministic extraction/import, episode-level metadata generation,
 and chunk embedding backfill. Chunk-level enrichment is currently a seeded first pass from episode-level
-fear tags, and the internal dashboard now includes a hybrid retrieval probe for validation.
+fear tags, the internal dashboard includes a hybrid retrieval probe for validation, and the creator
+workspace now stores story briefs ahead of draft generation.
 
 ## Data Model
 
@@ -85,8 +86,7 @@ Those are useful for schema inspection, migration assistance, and current platfo
 
 ## Immediate Roadmap
 
-1. Finish validating retrieval quality against a handful of known transcript prompts
-2. Build creator-side story project workflow
-3. Add draft generation and revision history
-4. Record chunk-level provenance on generated drafts
-5. Ship the public archive feed
+1. Finish validating retrieval quality against a handful of known story-brief prompts
+2. Add first-pass draft generation and revision history
+3. Record chunk-level provenance on generated drafts
+4. Ship the public archive feed

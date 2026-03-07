@@ -11,6 +11,13 @@ TMAGen is a Cloudflare-hosted, Supabase-backed fan-fiction platform inspired by 
 - `scripts/generate-chunk-embeddings.mjs` backfills `episode_chunks.embedding` and seeds chunk fear tags for retrieval.
 - `docs/setup.md` contains the detailed manual steps for local setup, Supabase setup, Cloudflare setup, and MCP wiring.
 
+## Current App Surfaces
+
+- `/`: public landing page
+- `/auth`: sign-up and sign-in
+- `/workspace`: private creator workspace for story briefs and retrieval preview
+- `/account`: internal transcript dashboard for corpus review and provenance inspection
+
 ## Repository Layout
 
 - `apps/web`: web application deployed to Cloudflare Workers

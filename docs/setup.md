@@ -191,7 +191,8 @@ What this does:
 - replaces `episode_chunks` for each imported episode
 - stores deterministic metadata such as extraction timestamp and transcript checksum
 
-After the import finishes, sign in to the app and open `/account`. That route is now the internal transcript dashboard.
+After the import finishes, sign in to the app and open `/workspace` for the creator brief flow.
+Use `/account` for the internal transcript dashboard.
 
 ## 7. Generate Episode Metadata
 
@@ -258,8 +259,8 @@ What this does:
 - seeds `episode_chunks.fear_slugs` from the episode-level fear assignments
 - stores `embedding_model` and `embedding_generated_at` in chunk metadata for auditability
 
-After this finishes, sign in to `/account` and use the hybrid retrieval probe to test vector plus lexical
-chunk search before story generation exists.
+After this finishes, sign in to `/workspace` to preview retrieval against a story brief, or use `/account`
+for the lower-level transcript retrieval probe.
 
 ## 9. Configure Cloudflare
 
