@@ -155,7 +155,39 @@ What this does:
 
 After the import finishes, sign in to the app and open `/account`. That route is now the internal transcript dashboard.
 
-## 7. Configure Cloudflare
+## 7. Generate Episode Metadata
+
+Once the transcript corpus is imported, generate the first episode-level metadata pass.
+
+Start with a dry run:
+
+```bash
+npm run generate:metadata -- --dry-run
+```
+
+Then run the real job:
+
+```bash
+npm run generate:metadata
+```
+
+Useful filters while you tune prompts:
+
+```bash
+npm run generate:metadata -- --episode 32 --force
+npm run generate:metadata -- --limit 5
+```
+
+What this does:
+
+- reads imported episodes from Supabase using the service-role key in `apps/web/.dev.vars`
+- sends each transcript to the configured OpenAI chat model
+- writes `summary`, `hook`, `primary_fear_slug`, `secondary_fear_slugs`, and structured `generated_metadata`
+- moves successful rows to `import_status = metadata_ready`
+
+If a call fails, that episode is marked `metadata_failed` so you can re-run just the missing records or use `--force`.
+
+## 8. Configure Cloudflare
 
 ### Log In
 
@@ -190,7 +222,7 @@ From the repository root:
 npm run deploy:web
 ```
 
-## 8. MCP Servers
+## 9. MCP Servers
 
 There are two parts here:
 
@@ -240,12 +272,11 @@ codex mcp add cloudflare-bindings --url https://bindings.mcp.cloudflare.com/mcp
 
 If a client prompts for OAuth when you first use a server, complete that in the browser.
 
-## 9. Recommended Next Move After Setup
+## 10. Recommended Next Move After Setup
 
 Once the steps above are complete, the next implementation target should be:
 
-1. automatic metadata generation for imported episodes
-2. embeddings and hybrid retrieval
-3. creator-side story project workflow
-4. draft generation and revision history
-5. the public archive feed
+1. embeddings and hybrid retrieval
+2. creator-side story project workflow
+3. draft generation and revision history
+4. the public archive feed

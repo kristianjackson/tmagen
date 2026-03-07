@@ -10,6 +10,7 @@
     "deploy:web": "npm --prefix apps/web run deploy",
     "dev": "npm --prefix apps/web run dev",
     "extract:transcripts": "node scripts/extract-transcripts.mjs --input ./tma_source_transcripts --output ./data/processed/episodes",
+    "generate:metadata": "node scripts/generate-episode-metadata.mjs --env-file ./apps/web/.dev.vars",
     "import:transcripts": "node scripts/import-transcripts.mjs --input ./data/processed/episodes --env-file ./apps/web/.dev.vars",
     "typecheck": "npm --prefix apps/web run typecheck"
   }

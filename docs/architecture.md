@@ -32,7 +32,7 @@ The transcript corpus is already text-based PDF, so the ingestion path is:
 6. Store chunk embeddings in Supabase `pgvector`
 7. Link generated stories back to the episodes and chunks they used
 
-The first repository script only does steps 1 to 3. That keeps the first pass deterministic and cheap.
+The current repository scripts cover deterministic extraction/import plus episode-level metadata generation. Embeddings and chunk-level enrichment are still pending.
 
 ## Data Model
 
@@ -83,8 +83,8 @@ Those are useful for schema inspection, migration assistance, and current platfo
 
 ## Immediate Roadmap
 
-1. Finish local transcript extraction output and review a handful of cleaned files
-2. Apply the initial Supabase schema
-3. Add Supabase client wiring to the web app
-4. Build auth, creator workspace, and story archive tables into the UI
-5. Add metadata generation and embedding jobs
+1. Finish validating the generated episode metadata against a handful of known transcripts
+2. Add chunk embeddings and hybrid retrieval
+3. Build creator-side story project workflow
+4. Add draft generation and revision history
+5. Ship the public archive feed

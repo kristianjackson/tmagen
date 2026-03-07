@@ -7,6 +7,7 @@ TMAGen is a Cloudflare-hosted, Supabase-backed fan-fiction platform inspired by 
 - `apps/web` contains the Cloudflare Workers + React Router web app.
 - `supabase` contains the Supabase CLI config and the first schema migration.
 - `scripts/extract-transcripts.mjs` converts the local transcript PDFs into cleaned JSON files that are ready for metadata generation and embedding.
+- `scripts/generate-episode-metadata.mjs` fills episode summaries, hooks, fear tags, and retrieval metadata after transcript import.
 - `docs/setup.md` contains the detailed manual steps for local setup, Supabase setup, Cloudflare setup, and MCP wiring.
 
 ## Repository Layout
@@ -27,6 +28,8 @@ npm run dev
 npm run typecheck
 npm run build
 npm run extract:transcripts
+npm run generate:metadata -- --dry-run
+npm run generate:metadata
 ```
 
 ## Recommended Order
@@ -35,7 +38,8 @@ npm run extract:transcripts
 2. Run `npm run dev` and confirm the web app boots.
 3. Run `npm run extract:transcripts` to create the first cleaned transcript artifacts.
 4. Create the Supabase project and apply the first migration.
-5. Configure Cloudflare secrets and deploy the web app.
+5. Run `npm run import:transcripts`, then `npm run generate:metadata`.
+6. Configure Cloudflare secrets and deploy the web app.
 
 ## Notes
 
