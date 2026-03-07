@@ -101,10 +101,11 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const adminClient = createSupabaseAdminClient(env);
   const url = new URL(request.url);
   const selectedProjectSlug = url.searchParams.get("project");
+  const didGenerate = url.searchParams.get("generated") === "1";
   const flash =
     url.searchParams.get("created") === "1"
       ? "Story brief created."
-      : url.searchParams.get("generated") === "1"
+      : didGenerate
         ? "Draft generated."
       : url.searchParams.get("saved") === "1"
         ? "Story brief saved."
@@ -273,6 +274,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     {
       fearOptions,
       flash,
+      didGenerate,
       projects,
       retrieval,
       selectedProject,
@@ -380,7 +382,7 @@ export async function action({ request, context }: Route.ActionArgs) {
       );
     }
 
-    return redirect(`/workspace?project=${projectRow.slug}&generated=1`, {
+    return redirect(`/workspace?project=${projectRow.slug}&generated=1#latest-draft`, {
       headers: responseHeaders,
     });
   }
@@ -533,6 +535,7 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
   const {
     fearOptions,
     flash,
+    didGenerate,
     projects,
     retrieval,
     selectedProject,
@@ -622,7 +625,15 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
 
       {flash ? (
         <div className="mt-6 rounded-[1.5rem] border border-emerald-500/30 bg-emerald-500/10 px-5 py-4 text-sm text-emerald-100">
-          {flash}
+          <span>{flash}</span>
+          {didGenerate && selectedVersion ? (
+            <a
+              href="#latest-draft"
+              className="ml-3 font-semibold text-emerald-50 underline underline-offset-4"
+            >
+              Jump to latest draft
+            </a>
+          ) : null}
         </div>
       ) : null}
 
@@ -1052,7 +1063,10 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
                 {selectedProjectVersions.length > 0 ? (
                   <div className="mt-6 space-y-6">
                     {selectedVersion ? (
-                      <article className="rounded-[1.5rem] border border-stone-800 bg-stone-900/75 p-5">
+                      <article
+                        id="latest-draft"
+                        className="rounded-[1.5rem] border border-stone-800 bg-stone-900/75 p-5"
+                      >
                         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                           <div>
                             <p className="text-xs uppercase tracking-[0.24em] text-stone-500">
