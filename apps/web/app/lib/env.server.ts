@@ -13,12 +13,12 @@ export type AppEnv = Env & {
 export function getPublicEnv(env: AppEnv): PublicEnv {
   return {
     appName: env.APP_NAME ?? "TMAGen",
-    supabaseUrl: requireBinding(env, "SUPABASE_URL"),
-    supabaseAnonKey: requireBinding(env, "SUPABASE_ANON_KEY"),
+    supabaseUrl: requireEnvBinding(env, "SUPABASE_URL"),
+    supabaseAnonKey: requireEnvBinding(env, "SUPABASE_ANON_KEY"),
   };
 }
 
-function requireBinding<T extends keyof AppEnv>(env: AppEnv, key: T) {
+export function requireEnvBinding<T extends keyof AppEnv>(env: AppEnv, key: T) {
   const value = env[key];
 
   if (typeof value !== "string" || value.length === 0) {

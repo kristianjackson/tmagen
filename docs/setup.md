@@ -131,7 +131,31 @@ Then edit `apps/web/.dev.vars` and fill in the real values:
 
 Do not commit `.dev.vars`.
 
-## 6. Configure Cloudflare
+## 6. Import the Cleaned Transcript Corpus into Supabase
+
+First do a dry run. This only reads the cleaned JSON files and shows how many chunks will be written:
+
+```bash
+npm run import:transcripts -- --dry-run
+```
+
+If that looks correct, run the real import:
+
+```bash
+npm run import:transcripts
+```
+
+What this does:
+
+- reads every cleaned episode JSON in `./data/processed/episodes`
+- chunks transcript text into retrieval-sized records
+- upserts `episodes`
+- replaces `episode_chunks` for each imported episode
+- stores deterministic metadata such as extraction timestamp and transcript checksum
+
+After the import finishes, sign in to the app and open `/account`. That route is now the internal transcript dashboard.
+
+## 7. Configure Cloudflare
 
 ### Log In
 
@@ -166,7 +190,7 @@ From the repository root:
 npm run deploy:web
 ```
 
-## 7. MCP Servers
+## 8. MCP Servers
 
 There are two parts here:
 
@@ -175,23 +199,53 @@ There are two parts here:
 
 The server URLs are the stable part:
 
-- Cloudflare docs MCP: `https://docs.mcp.cloudflare.com/sse`
-- Cloudflare bindings MCP: `https://bindings.mcp.cloudflare.com/sse`
+- Cloudflare docs MCP: `https://docs.mcp.cloudflare.com/mcp`
+- Cloudflare bindings MCP: `https://bindings.mcp.cloudflare.com/mcp`
 - Supabase MCP: `https://mcp.supabase.com/mcp`
 
-The client configuration format depends on what tool you want to use them from. Your current local files show:
+For VS Code, the config file is:
 
-- Codex config at `/home/kpjack/.codex/config.toml`
-- VS Code MCP config at `/home/kpjack/.config/Code/User/mcp.json`
+```text
+/home/kpjack/.config/Code/User/mcp.json
+```
 
-This repository does not edit those files automatically. They are outside the project workspace. If you want me to wire MCP into your local tool config next, I can do that, but it will require your approval because those files are outside the repo.
+Example:
 
-## 8. Recommended Next Move After Setup
+```json
+{
+  "servers": {
+    "supabase": {
+      "type": "http",
+      "url": "https://mcp.supabase.com/mcp"
+    },
+    "cloudflare-docs": {
+      "type": "http",
+      "url": "https://docs.mcp.cloudflare.com/mcp"
+    },
+    "cloudflare-bindings": {
+      "type": "http",
+      "url": "https://bindings.mcp.cloudflare.com/mcp"
+    }
+  }
+}
+```
+
+For Codex CLI, use:
+
+```bash
+codex mcp add supabase --url https://mcp.supabase.com/mcp
+codex mcp add cloudflare-docs --url https://docs.mcp.cloudflare.com/mcp
+codex mcp add cloudflare-bindings --url https://bindings.mcp.cloudflare.com/mcp
+```
+
+If a client prompts for OAuth when you first use a server, complete that in the browser.
+
+## 9. Recommended Next Move After Setup
 
 Once the steps above are complete, the next implementation target should be:
 
-1. Supabase client wiring in the web app
-2. auth and profile creation
-3. transcript import into Supabase
-4. transcript dashboard
-5. story generation pipeline
+1. automatic metadata generation for imported episodes
+2. embeddings and hybrid retrieval
+3. creator-side story project workflow
+4. draft generation and revision history
+5. the public archive feed

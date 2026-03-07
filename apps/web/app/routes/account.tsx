@@ -2,35 +2,206 @@ import { data, Form, Link, redirect } from "react-router";
 
 import type { Route } from "./+types/account";
 import type { AppEnv } from "../lib/env.server";
+import { createSupabaseAdminClient } from "../lib/supabase/admin.server";
 import { getViewer } from "../lib/viewer.server";
+
+type EpisodeListItem = {
+  id: string;
+  episodeNumber: number;
+  title: string;
+  slug: string;
+  importStatus: string;
+  wordCount: number | null;
+  contentWarnings: string[];
+  summary: string | null;
+  hook: string | null;
+  updatedAt: string;
+  storyReferenceCount: number;
+  storyProjectCount: number;
+  lastUsedAt: string | null;
+};
+
+type EpisodeDetail = EpisodeListItem & {
+  sourceFilename: string;
+  transcriptText: string;
+  characterCount: number | null;
+  primaryFearSlug: string | null;
+  secondaryFearSlugs: string[];
+  deterministicMetadata: Record<string, unknown>;
+  generatedMetadata: Record<string, unknown>;
+};
+
+type EpisodeStoryReference = {
+  storyProjectId: string;
+  storyTitle: string;
+  storySlug: string;
+  storyVisibility: string;
+  storyVersionId: string;
+  versionNumber: number;
+  versionVisibility: string;
+  relevanceScore: number | null;
+  usageReason: string | null;
+  linkedAt: string;
+};
 
 export function meta({}: Route.MetaArgs) {
   return [
-    { title: "TMAGen | Workspace" },
+    { title: "TMAGen | Transcript Dashboard" },
     {
       name: "description",
       content:
-        "Protected TMAGen workspace showing the authenticated viewer and the first live data fetched from Supabase.",
+        "Internal TMAGen transcript dashboard for browsing imported episode text, metadata, and story provenance.",
     },
   ];
 }
 
 export async function loader({ request, context }: Route.LoaderArgs) {
   const env = context.cloudflare.env as AppEnv;
-  const { responseHeaders, supabase, viewer } = await getViewer({ env, request });
+  const { responseHeaders, viewer } = await getViewer({ env, request });
 
   if (!viewer) {
     return redirect("/auth?next=/account", { headers: responseHeaders });
   }
 
-  const { data: fears } = await supabase
-    .from("fears")
-    .select("slug, name, description")
-    .order("sort_order", { ascending: true });
+  const adminClient = createSupabaseAdminClient(env);
+  const [{ data: episodeRows, error: episodesError }, { data: usageRows, error: usageError }] =
+    await Promise.all([
+      adminClient
+        .from("episodes")
+        .select(
+          "id, episode_number, title, slug, import_status, word_count, content_warnings, summary, hook, updated_at",
+        )
+        .order("episode_number", { ascending: true }),
+      adminClient
+        .from("episode_usage_stats")
+        .select("episode_id, story_version_count, story_project_count, last_used_at"),
+    ]);
+
+  if (episodesError) {
+    throw data(
+      { message: `Failed to load transcript list: ${episodesError.message}` },
+      { status: 500, headers: responseHeaders },
+    );
+  }
+
+  if (usageError) {
+    throw data(
+      { message: `Failed to load transcript usage: ${usageError.message}` },
+      { status: 500, headers: responseHeaders },
+    );
+  }
+
+  const usageByEpisode = new Map(
+    (usageRows ?? []).map((row) => [
+      row.episode_id,
+      {
+        storyReferenceCount: row.story_version_count ?? 0,
+        storyProjectCount: row.story_project_count ?? 0,
+        lastUsedAt: row.last_used_at ?? null,
+      },
+    ]),
+  );
+
+  const episodes: EpisodeListItem[] = (episodeRows ?? []).map((row) => {
+    const usage = usageByEpisode.get(row.id);
+
+    return {
+      id: row.id,
+      episodeNumber: row.episode_number,
+      title: row.title,
+      slug: row.slug,
+      importStatus: row.import_status,
+      wordCount: row.word_count,
+      contentWarnings: row.content_warnings ?? [],
+      summary: row.summary,
+      hook: row.hook,
+      updatedAt: row.updated_at,
+      storyReferenceCount: usage?.storyReferenceCount ?? 0,
+      storyProjectCount: usage?.storyProjectCount ?? 0,
+      lastUsedAt: usage?.lastUsedAt ?? null,
+    };
+  });
+
+  const url = new URL(request.url);
+  const requestedSlug = url.searchParams.get("episode");
+  const selectedEpisodeSummary =
+    episodes.find((episode) => episode.slug === requestedSlug) ?? episodes[0] ?? null;
+
+  let selectedEpisode: EpisodeDetail | null = null;
+  let selectedEpisodeReferences: EpisodeStoryReference[] = [];
+
+  if (selectedEpisodeSummary) {
+    const [{ data: episodeDetailRow, error: detailError }, { data: referenceRows, error: referencesError }] =
+      await Promise.all([
+        adminClient
+          .from("episodes")
+          .select(
+            "id, episode_number, title, slug, source_filename, transcript_text, import_status, word_count, character_count, content_warnings, summary, hook, primary_fear_slug, secondary_fear_slugs, deterministic_metadata, generated_metadata, updated_at",
+          )
+          .eq("id", selectedEpisodeSummary.id)
+          .single(),
+        adminClient
+          .from("episode_story_references")
+          .select(
+            "story_project_id, story_title, story_slug, story_visibility, story_version_id, version_number, version_visibility, relevance_score, usage_reason, linked_at",
+          )
+          .eq("episode_id", selectedEpisodeSummary.id)
+          .order("linked_at", { ascending: false }),
+      ]);
+
+    if (detailError) {
+      throw data(
+        { message: `Failed to load episode details: ${detailError.message}` },
+        { status: 500, headers: responseHeaders },
+      );
+    }
+
+    if (referencesError) {
+      throw data(
+        { message: `Failed to load episode provenance: ${referencesError.message}` },
+        { status: 500, headers: responseHeaders },
+      );
+    }
+
+    selectedEpisode = {
+      ...selectedEpisodeSummary,
+      sourceFilename: episodeDetailRow.source_filename,
+      transcriptText: episodeDetailRow.transcript_text,
+      characterCount: episodeDetailRow.character_count,
+      primaryFearSlug: episodeDetailRow.primary_fear_slug,
+      secondaryFearSlugs: episodeDetailRow.secondary_fear_slugs ?? [],
+      deterministicMetadata: asRecord(episodeDetailRow.deterministic_metadata),
+      generatedMetadata: asRecord(episodeDetailRow.generated_metadata),
+    };
+
+    selectedEpisodeReferences = (referenceRows ?? []).map((row) => ({
+      storyProjectId: row.story_project_id,
+      storyTitle: row.story_title,
+      storySlug: row.story_slug,
+      storyVisibility: row.story_visibility,
+      storyVersionId: row.story_version_id,
+      versionNumber: row.version_number,
+      versionVisibility: row.version_visibility,
+      relevanceScore: row.relevance_score,
+      usageReason: row.usage_reason,
+      linkedAt: row.linked_at,
+    }));
+  }
 
   return data(
     {
-      fears: fears ?? [],
+      episodes,
+      selectedEpisode,
+      selectedEpisodeReferences,
+      summary: {
+        episodeCount: episodes.length,
+        totalWords: episodes.reduce((sum, episode) => sum + (episode.wordCount ?? 0), 0),
+        episodesUsedCount: episodes.filter((episode) => episode.storyReferenceCount > 0).length,
+        storyReferenceCount: episodes.reduce(
+          (sum, episode) => sum + episode.storyReferenceCount,
+          0,
+        ),
+      },
       viewer,
     },
     { headers: responseHeaders },
@@ -38,19 +209,25 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 }
 
 export default function Account({ loaderData }: Route.ComponentProps) {
-  const { fears, viewer } = loaderData;
+  const { episodes, selectedEpisode, selectedEpisodeReferences, summary, viewer } = loaderData;
 
   return (
-    <main className="mx-auto min-h-screen w-full max-w-6xl px-6 py-10 lg:px-10">
-      <div className="flex items-center justify-between rounded-full border border-stone-800/80 bg-stone-950/60 px-5 py-3 backdrop-blur">
+    <main className="mx-auto min-h-screen w-full max-w-[1440px] px-6 py-10 lg:px-10">
+      <div className="flex flex-col gap-4 rounded-[2rem] border border-stone-800/80 bg-stone-950/70 p-6 backdrop-blur lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.35em] text-amber-300">
-            TMAGen Workspace
+            Transcript Dashboard
           </p>
-          <p className="mt-1 text-xs text-stone-400">
-            Authenticated route backed by Supabase
+          <h1 className="mt-4 font-display text-4xl text-stone-50">
+            Internal archive view for imported Magnus material
+          </h1>
+          <p className="mt-4 max-w-3xl text-sm leading-7 text-stone-300">
+            Signed in as {viewer.profile?.displayName ?? viewer.user.displayName}. This route uses a
+            server-only Supabase client so the transcript corpus and provenance stay out of the public
+            surface while we build the real operator role model.
           </p>
         </div>
+
         <div className="flex items-center gap-3">
           <Link
             to="/"
@@ -69,68 +246,330 @@ export default function Account({ loaderData }: Route.ComponentProps) {
         </div>
       </div>
 
-      <section className="mt-10 grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
-        <aside className="rounded-[2rem] border border-stone-800/80 bg-stone-950/80 p-6">
-          <p className="text-xs font-semibold uppercase tracking-[0.32em] text-stone-500">
-            Current viewer
-          </p>
-          <h1 className="mt-4 font-display text-4xl text-stone-50">
-            {viewer.profile?.displayName ?? viewer.user.displayName}
-          </h1>
-          <div className="mt-6 space-y-3 text-sm text-stone-300">
-            <p>
-              <span className="text-stone-500">Email:</span> {viewer.user.email ?? "No email"}
-            </p>
-            <p>
-              <span className="text-stone-500">Handle:</span>{" "}
-              {viewer.profile?.handle ? `@${viewer.profile.handle}` : "Not set yet"}
-            </p>
-            <p>
-              <span className="text-stone-500">Profile source:</span>{" "}
-              {viewer.profile ? "Loaded from `profiles`" : "Fallback from auth metadata"}
-            </p>
-          </div>
-
-          <div className="mt-8 rounded-2xl border border-amber-500/25 bg-amber-500/10 p-4">
-            <p className="text-xs uppercase tracking-[0.28em] text-amber-200">
-              What this proves
-            </p>
-            <p className="mt-3 text-sm leading-7 text-amber-50/90">
-              Supabase auth is issuing a working session, the protected route is verifying it on the
-              server, and the app can read product data with that authenticated context.
-            </p>
-          </div>
-        </aside>
-
-        <section className="rounded-[2rem] border border-stone-800/80 bg-stone-950/80 p-6">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.32em] text-stone-500">
-                First live dataset
-              </p>
-              <h2 className="mt-3 font-display text-3xl text-stone-50">
-                Fear taxonomy from the Supabase database
-              </h2>
-            </div>
-            <span className="rounded-full border border-stone-700 px-3 py-1 text-xs uppercase tracking-[0.22em] text-stone-300">
-              {fears.length} records
-            </span>
-          </div>
-
-          <div className="mt-8 grid gap-3 md:grid-cols-2">
-            {fears.map((fear) => (
-              <article
-                key={fear.slug}
-                className="rounded-2xl border border-stone-800 bg-stone-900/75 p-4"
-              >
-                <p className="text-xs uppercase tracking-[0.24em] text-stone-500">{fear.slug}</p>
-                <h3 className="mt-3 font-display text-2xl text-stone-50">{fear.name}</h3>
-                <p className="mt-3 text-sm leading-7 text-stone-300">{fear.description}</p>
-              </article>
-            ))}
-          </div>
-        </section>
+      <section className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <SummaryCard label="Imported episodes" value={formatNumber(summary.episodeCount)} />
+        <SummaryCard label="Corpus words" value={formatNumber(summary.totalWords)} />
+        <SummaryCard label="Episodes used" value={formatNumber(summary.episodesUsedCount)} />
+        <SummaryCard label="Story references" value={formatNumber(summary.storyReferenceCount)} />
       </section>
+
+      {episodes.length === 0 ? (
+        <section className="mt-8 rounded-[2rem] border border-dashed border-stone-700 bg-stone-950/60 p-8">
+          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-stone-500">
+            Nothing imported yet
+          </p>
+          <h2 className="mt-4 font-display text-3xl text-stone-50">Run the transcript import first.</h2>
+          <p className="mt-4 max-w-3xl text-sm leading-7 text-stone-300">
+            Once the initial schema is applied and your local `.dev.vars` has a real Supabase service
+            role key, run `npm run import:transcripts -- --dry-run` and then `npm run import:transcripts`.
+          </p>
+        </section>
+      ) : (
+        <section className="mt-8 grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
+          <aside className="rounded-[2rem] border border-stone-800/80 bg-stone-950/70 p-4">
+            <div className="border-b border-stone-800 px-3 pb-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.32em] text-stone-500">
+                Imported archive
+              </p>
+              <p className="mt-2 text-sm text-stone-300">
+                {episodes.length} cleaned episodes ready for retrieval and metadata review.
+              </p>
+            </div>
+
+            <div className="mt-4 max-h-[72vh] space-y-3 overflow-y-auto pr-1">
+              {episodes.map((episode) => {
+                const isActive = selectedEpisode?.id === episode.id;
+
+                return (
+                  <Link
+                    key={episode.id}
+                    to={`/account?episode=${episode.slug}`}
+                    className={`block rounded-[1.4rem] border p-4 transition ${
+                      isActive
+                        ? "border-amber-400/40 bg-amber-500/10"
+                        : "border-stone-800 bg-stone-900/70 hover:border-stone-600"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.26em] text-stone-500">
+                          MAG {String(episode.episodeNumber).padStart(3, "0")}
+                        </p>
+                        <h2 className="mt-3 font-display text-2xl text-stone-50">{episode.title}</h2>
+                      </div>
+                      <span className="rounded-full border border-stone-700 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-stone-300">
+                        {episode.storyReferenceCount} refs
+                      </span>
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.18em] text-stone-400">
+                      <span className="rounded-full bg-stone-800 px-2 py-1">
+                        {formatNumber(episode.wordCount ?? 0)} words
+                      </span>
+                      <span className="rounded-full bg-stone-800 px-2 py-1">
+                        {episode.importStatus}
+                      </span>
+                      {episode.contentWarnings.length > 0 ? (
+                        <span className="rounded-full bg-stone-800 px-2 py-1">
+                          {episode.contentWarnings.length} warnings
+                        </span>
+                      ) : null}
+                    </div>
+
+                    {episode.hook ? (
+                      <p className="mt-4 text-sm leading-6 text-stone-300">{episode.hook}</p>
+                    ) : (
+                      <p className="mt-4 text-sm leading-6 text-stone-400">
+                        No generated hook yet. Deterministic transcript import only.
+                      </p>
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
+          </aside>
+
+          {selectedEpisode ? (
+            <section className="space-y-6">
+              <article className="rounded-[2rem] border border-stone-800/80 bg-stone-950/75 p-6">
+                <p className="text-xs font-semibold uppercase tracking-[0.32em] text-stone-500">
+                  Selected episode
+                </p>
+                <div className="mt-4 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <p className="text-sm uppercase tracking-[0.26em] text-amber-300">
+                      MAG {String(selectedEpisode.episodeNumber).padStart(3, "0")}
+                    </p>
+                    <h2 className="mt-3 font-display text-5xl text-stone-50">
+                      {selectedEpisode.title}
+                    </h2>
+                    <p className="mt-4 max-w-3xl text-sm leading-7 text-stone-300">
+                      {selectedEpisode.summary ??
+                        "No generated summary yet. This episode is available with cleaned transcript text and deterministic metadata only."}
+                    </p>
+                  </div>
+
+                  <div className="rounded-[1.5rem] border border-stone-800 bg-stone-900/75 p-4 text-sm text-stone-300">
+                    <p>
+                      <span className="text-stone-500">Source file:</span>{" "}
+                      {selectedEpisode.sourceFilename}
+                    </p>
+                    <p className="mt-2">
+                      <span className="text-stone-500">Primary fear:</span>{" "}
+                      {selectedEpisode.primaryFearSlug ?? "Not assigned"}
+                    </p>
+                    <p className="mt-2">
+                      <span className="text-stone-500">Last used:</span>{" "}
+                      {formatDate(selectedEpisode.lastUsedAt)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <DetailCard label="Word count" value={formatNumber(selectedEpisode.wordCount ?? 0)} />
+                  <DetailCard
+                    label="Character count"
+                    value={formatNumber(selectedEpisode.characterCount ?? 0)}
+                  />
+                  <DetailCard
+                    label="Story references"
+                    value={formatNumber(selectedEpisode.storyReferenceCount)}
+                  />
+                  <DetailCard
+                    label="Story projects"
+                    value={formatNumber(selectedEpisode.storyProjectCount)}
+                  />
+                </div>
+
+                <div className="mt-6 grid gap-4 lg:grid-cols-2">
+                  <article className="rounded-[1.5rem] border border-stone-800 bg-stone-900/70 p-4">
+                    <p className="text-xs uppercase tracking-[0.26em] text-stone-500">
+                      Content warnings
+                    </p>
+                    {selectedEpisode.contentWarnings.length > 0 ? (
+                      <ul className="mt-4 space-y-2 text-sm text-stone-300">
+                        {selectedEpisode.contentWarnings.map((warning) => (
+                          <li key={warning}>{warning}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-4 text-sm text-stone-400">No warnings extracted.</p>
+                    )}
+                  </article>
+
+                  <article className="rounded-[1.5rem] border border-stone-800 bg-stone-900/70 p-4">
+                    <p className="text-xs uppercase tracking-[0.26em] text-stone-500">
+                      Secondary fears
+                    </p>
+                    {selectedEpisode.secondaryFearSlugs.length > 0 ? (
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {selectedEpisode.secondaryFearSlugs.map((fear) => (
+                          <span
+                            key={fear}
+                            className="rounded-full bg-stone-800 px-3 py-1 text-xs uppercase tracking-[0.22em] text-stone-200"
+                          >
+                            {fear}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-4 text-sm text-stone-400">No secondary fears tagged yet.</p>
+                    )}
+                  </article>
+                </div>
+              </article>
+
+              <article className="rounded-[2rem] border border-stone-800/80 bg-stone-950/75 p-6">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.32em] text-stone-500">
+                      Story provenance
+                    </p>
+                    <h3 className="mt-3 font-display text-3xl text-stone-50">
+                      Where this episode has already been used
+                    </h3>
+                  </div>
+                  <span className="rounded-full border border-stone-700 px-3 py-1 text-xs uppercase tracking-[0.22em] text-stone-300">
+                    {selectedEpisodeReferences.length} links
+                  </span>
+                </div>
+
+                {selectedEpisodeReferences.length > 0 ? (
+                  <div className="mt-6 grid gap-3">
+                    {selectedEpisodeReferences.map((reference) => (
+                      <article
+                        key={reference.storyVersionId}
+                        className="rounded-[1.4rem] border border-stone-800 bg-stone-900/70 p-4"
+                      >
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                          <div>
+                            <p className="text-xs uppercase tracking-[0.24em] text-stone-500">
+                              Story version {reference.versionNumber}
+                            </p>
+                            <h4 className="mt-2 font-display text-2xl text-stone-50">
+                              {reference.storyTitle}
+                            </h4>
+                            <p className="mt-3 text-sm text-stone-300">
+                              Visibility: project {reference.storyVisibility}, version{" "}
+                              {reference.versionVisibility}
+                            </p>
+                          </div>
+                          <div className="text-sm text-stone-300">
+                            <p>
+                              <span className="text-stone-500">Slug:</span> {reference.storySlug}
+                            </p>
+                            <p className="mt-2">
+                              <span className="text-stone-500">Linked:</span>{" "}
+                              {formatDate(reference.linkedAt)}
+                            </p>
+                            <p className="mt-2">
+                              <span className="text-stone-500">Relevance:</span>{" "}
+                              {reference.relevanceScore !== null
+                                ? reference.relevanceScore.toFixed(3)
+                                : "Not scored"}
+                            </p>
+                          </div>
+                        </div>
+
+                        {reference.usageReason ? (
+                          <p className="mt-4 text-sm leading-6 text-stone-300">
+                            {reference.usageReason}
+                          </p>
+                        ) : null}
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-6 text-sm leading-7 text-stone-400">
+                    No generated stories reference this episode yet. Once story drafting lands, links back
+                    to source episodes will appear here.
+                  </p>
+                )}
+              </article>
+
+              <section className="grid gap-6 xl:grid-cols-2">
+                <article className="rounded-[2rem] border border-stone-800/80 bg-stone-950/75 p-6">
+                  <p className="text-xs font-semibold uppercase tracking-[0.32em] text-stone-500">
+                    Deterministic metadata
+                  </p>
+                  <pre className="mt-4 overflow-x-auto rounded-[1.4rem] border border-stone-800 bg-stone-900/80 p-4 text-xs leading-6 text-stone-200">
+                    {JSON.stringify(selectedEpisode.deterministicMetadata, null, 2)}
+                  </pre>
+                </article>
+
+                <article className="rounded-[2rem] border border-stone-800/80 bg-stone-950/75 p-6">
+                  <p className="text-xs font-semibold uppercase tracking-[0.32em] text-stone-500">
+                    Generated metadata
+                  </p>
+                  <pre className="mt-4 overflow-x-auto rounded-[1.4rem] border border-stone-800 bg-stone-900/80 p-4 text-xs leading-6 text-stone-200">
+                    {JSON.stringify(selectedEpisode.generatedMetadata, null, 2)}
+                  </pre>
+                </article>
+              </section>
+
+              <article className="rounded-[2rem] border border-stone-800/80 bg-stone-950/75 p-6">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.32em] text-stone-500">
+                      Transcript text
+                    </p>
+                    <h3 className="mt-3 font-display text-3xl text-stone-50">
+                      Cleaned source text currently stored for retrieval
+                    </h3>
+                  </div>
+                  <span className="rounded-full border border-stone-700 px-3 py-1 text-xs uppercase tracking-[0.22em] text-stone-300">
+                    {selectedEpisode.importStatus}
+                  </span>
+                </div>
+                <pre className="mt-6 max-h-[900px] overflow-auto whitespace-pre-wrap rounded-[1.5rem] border border-stone-800 bg-stone-900/75 p-5 text-sm leading-7 text-stone-200">
+                  {selectedEpisode.transcriptText}
+                </pre>
+              </article>
+            </section>
+          ) : null}
+        </section>
+      )}
     </main>
   );
+}
+
+function SummaryCard({ label, value }: { label: string; value: string }) {
+  return (
+    <article className="rounded-[1.6rem] border border-stone-800/80 bg-stone-950/70 p-5">
+      <p className="text-xs font-semibold uppercase tracking-[0.28em] text-stone-500">{label}</p>
+      <p className="mt-4 font-display text-4xl text-stone-50">{value}</p>
+    </article>
+  );
+}
+
+function DetailCard({ label, value }: { label: string; value: string }) {
+  return (
+    <article className="rounded-[1.3rem] border border-stone-800 bg-stone-900/70 p-4">
+      <p className="text-xs uppercase tracking-[0.24em] text-stone-500">{label}</p>
+      <p className="mt-3 font-display text-3xl text-stone-50">{value}</p>
+    </article>
+  );
+}
+
+function formatNumber(value: number) {
+  return value.toLocaleString();
+}
+
+function formatDate(value: string | null) {
+  if (!value) {
+    return "Never";
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  return value as Record<string, unknown>;
 }
