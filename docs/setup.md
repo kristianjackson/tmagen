@@ -120,21 +120,36 @@ Open Supabase Dashboard -> Authentication -> URL Configuration.
 Set:
 
 - Site URL: your active app origin
-- Redirect URLs: include the auth callback URL for every environment you use
+- Redirect URLs: include the auth confirmation URL for every environment you use
 
 For the current deployed Worker, add:
 
 ```text
-https://tmagen-web.kristian-jackson.workers.dev/auth/callback
+https://tmagen-web.kristian-jackson.workers.dev/auth/confirm
 ```
 
 For local development, add the callback URL that matches whatever `npm run dev` prints, for example:
 
 ```text
-http://localhost:5173/auth/callback
+http://localhost:5173/auth/confirm
 ```
 
 If the Site URL is left on `http://localhost:3000`, Supabase confirmation emails will redirect there.
+
+### Update the Confirm Signup Email Template
+
+Open Supabase Dashboard -> Authentication -> Email Templates -> Confirm signup.
+
+If the template still uses `{{ .ConfirmationURL }}`, PKCE-based SSR flows can fail with errors like
+`code challenge does not match previously saved code verifier`.
+
+Use a token-hash confirmation link instead:
+
+```text
+{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email
+```
+
+That route is now implemented in the app and verifies the token server-side.
 
 ## 5. Configure Local Secrets for the Web App
 

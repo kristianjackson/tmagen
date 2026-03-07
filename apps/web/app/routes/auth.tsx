@@ -2,7 +2,7 @@ import { data, Form, Link, redirect, useNavigation } from "react-router";
 
 import type { Route } from "./+types/auth";
 import {
-  buildAuthCallbackUrl,
+  buildAuthConfirmUrl,
   getSafeNextPath,
 } from "../lib/auth-redirect";
 import type { AppEnv } from "../lib/env.server";
@@ -90,7 +90,7 @@ export async function action({ request, context }: Route.ActionArgs) {
         data: {
           display_name: displayName,
         },
-        emailRedirectTo: buildAuthCallbackUrl(request, next),
+        emailRedirectTo: buildAuthConfirmUrl(request, next),
       },
     });
 

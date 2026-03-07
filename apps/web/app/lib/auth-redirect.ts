@@ -10,10 +10,10 @@ export function getSafeNextPath(value: FormDataEntryValue | string | null) {
   return value;
 }
 
-export function buildAuthCallbackUrl(request: Request, next: string) {
-  const callbackUrl = new URL("/auth/callback", request.url);
-  callbackUrl.searchParams.set("next", getSafeNextPath(next));
-  return callbackUrl.toString();
+export function buildAuthConfirmUrl(request: Request, next: string) {
+  const confirmUrl = new URL("/auth/confirm", request.url);
+  confirmUrl.searchParams.set("next", getSafeNextPath(next));
+  return confirmUrl.toString();
 }
 
 export function buildAuthErrorRedirect(next: string, error: string) {

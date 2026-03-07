@@ -1,4 +1,4 @@
-import type { Route } from "./+types/auth-callback";
+import type { Route } from "./+types/auth-confirm";
 import type { AppEnv } from "../lib/env.server";
 import { handleAuthConfirmation } from "../lib/auth-confirm.server";
 
@@ -9,6 +9,6 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   });
 }
 
-export default function AuthCallback() {
+export default function AuthConfirm() {
   return null;
 }
