@@ -10,6 +10,7 @@ TMAGen is a Cloudflare-hosted, Supabase-backed fan-fiction platform inspired by 
 - `scripts/generate-episode-metadata.mjs` fills episode summaries, hooks, fear tags, and retrieval metadata after transcript import.
 - `scripts/generate-chunk-embeddings.mjs` backfills `episode_chunks.embedding` and seeds chunk fear tags for retrieval.
 - `docs/setup.md` contains the detailed manual steps for local setup, Supabase setup, Cloudflare setup, and MCP wiring.
+- `docs/roadmap.md` is the active implementation plan and priority reference.
 
 ## Current App Surfaces
 

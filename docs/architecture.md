@@ -88,7 +88,4 @@ Those are useful for schema inspection, migration assistance, and current platfo
 
 ## Immediate Roadmap
 
-1. Add creator-side revision and regenerate flows on top of immutable versions
-2. Improve provenance from episode-level links to more explicit chunk-level presentation
-3. Finish validating retrieval quality against a broader set of story-brief prompts
-4. Ship the public archive feed
+See [docs/roadmap.md](./roadmap.md) for the active implementation plan.
