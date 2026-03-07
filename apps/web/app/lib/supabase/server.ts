@@ -1,5 +1,5 @@
 import { createServerClient } from "@supabase/ssr";
-import { createCookie } from "react-router";
+import { parse, serialize } from "cookie";
 
 import { getPublicEnv, type AppEnv } from "../env.server";
 
@@ -50,11 +50,11 @@ export function createSupabaseServerClient({
             };
           }
 
-          const cookie = createCookie(cookieToSet.name, cookieToSet.options);
-          responseHeaders.append(
-            "Set-Cookie",
-            await cookie.serialize(cookieToSet.value),
-          );
+          responseHeaders.append("Set-Cookie", serialize(
+            cookieToSet.name,
+            cookieToSet.value,
+            cookieToSet.options,
+          ));
         }
       },
     },
@@ -71,26 +71,8 @@ function parseCookieHeader(header: string | null): CookieRecord[] {
     return [];
   }
 
-  return header
-    .split(";")
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .map((part) => {
-      const separatorIndex = part.indexOf("=");
-      const name = separatorIndex === -1 ? part : part.slice(0, separatorIndex);
-      const rawValue = separatorIndex === -1 ? "" : part.slice(separatorIndex + 1);
-
-      return {
-        name,
-        value: safeDecodeCookieValue(rawValue),
-      };
-    });
-}
-
-function safeDecodeCookieValue(value: string) {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
+  return Object.entries(parse(header)).map(([name, value]) => ({
+    name,
+    value: value ?? "",
+  }));
 }
