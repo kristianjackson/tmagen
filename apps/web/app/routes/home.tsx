@@ -157,8 +157,8 @@ export default function Home() {
                 Immediate goal
               </p>
               <p className="mt-3 text-sm leading-7 text-amber-50/90">
-                Land the creator workspace and brief shaping flow so the first real draft-generation pass
-                has a durable home instead of living in ad hoc scripts.
+                Tighten creator-side draft generation and revision flow so each story keeps a durable
+                prompt snapshot, retrieval packet, and provenance trail.
               </p>
             </div>
           </aside>

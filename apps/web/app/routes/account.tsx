@@ -781,8 +781,8 @@ export default function Account({ loaderData }: Route.ComponentProps) {
                   </div>
                 ) : (
                   <p className="mt-6 text-sm leading-7 text-stone-400">
-                    No generated stories reference this episode yet. Once story drafting lands, links back
-                    to source episodes will appear here.
+                    No generated stories reference this episode yet. Once a draft uses this episode,
+                    links back to source material will appear here.
                   </p>
                 )}
               </article>

@@ -35,7 +35,7 @@ The transcript corpus is already text-based PDF, so the ingestion path is:
 The current repository scripts cover deterministic extraction/import, episode-level metadata generation,
 and chunk embedding backfill. Chunk-level enrichment is currently a seeded first pass from episode-level
 fear tags, the internal dashboard includes a hybrid retrieval probe for validation, and the creator
-workspace now stores story briefs ahead of draft generation.
+workspace can now turn story briefs into immutable draft versions with prompt and retrieval snapshots.
 
 ## Data Model
 
@@ -54,14 +54,16 @@ The design is version-first. Generated stories are never overwritten in place.
 
 ## Retrieval and Generation Flow
 
-The eventual generation path should be:
+The current generation path is:
 
 1. User chooses canon mode, cast policy, fears, and optional prompt seed
 2. System builds a structured brief
 3. Relevant transcript chunks are retrieved via hybrid search
-4. Model produces an outline
-5. Model produces a draft from the outline plus retrieved material
-6. Revisions create new story versions with their own provenance snapshot
+4. Model produces a draft from the brief plus retrieved material
+5. System stores the draft as a new `story_versions` row
+6. System records episode-level provenance links and keeps the retrieval snapshot for auditability
+
+The next extension is revision-aware generation rather than first-pass draft creation.
 
 This is deliberately retrieval-first rather than fine-tuning-first. With the current corpus size, that is easier to debug and cheaper to run.
 
@@ -86,7 +88,7 @@ Those are useful for schema inspection, migration assistance, and current platfo
 
 ## Immediate Roadmap
 
-1. Finish validating retrieval quality against a handful of known story-brief prompts
-2. Add first-pass draft generation and revision history
-3. Record chunk-level provenance on generated drafts
+1. Add creator-side revision and regenerate flows on top of immutable versions
+2. Improve provenance from episode-level links to more explicit chunk-level presentation
+3. Finish validating retrieval quality against a broader set of story-brief prompts
 4. Ship the public archive feed

@@ -2,10 +2,12 @@ import { data, Form, Link, redirect, useNavigation } from "react-router";
 
 import type { Route } from "./+types/workspace";
 import type { AppEnv } from "../lib/env.server";
+import { generateStoryVersionFromProject } from "../lib/story-generation.server";
 import {
   runChunkRetrievalProbe,
   type RetrievalProbe,
 } from "../lib/retrieval.server";
+import { buildStoryRetrievalQuery } from "../lib/story-generation";
 import { createSupabaseAdminClient } from "../lib/supabase/admin.server";
 import { getViewer } from "../lib/viewer.server";
 
@@ -40,16 +42,31 @@ type StoryProjectSummary = {
 type StoryVersionSummary = {
   id: string;
   storyProjectId: string;
+  parentVersionId: string | null;
   versionNumber: number;
   visibility: string;
   createdAt: string;
   revisionNotes: string | null;
   modelName: string | null;
+  contentMarkdown: string;
+  promptSnapshot: Record<string, unknown>;
+  retrievalSnapshot: unknown[];
+  generationMetadata: Record<string, unknown>;
+};
+
+type StoryEpisodeLink = {
+  episodeId: string;
+  episodeNumber: number;
+  episodeSlug: string;
+  episodeTitle: string;
+  chunkIds: string[];
+  relevanceScore: number | null;
+  usageReason: string | null;
 };
 
 type ActionData = {
   error: string;
-  intent: "create-project" | "update-project";
+  intent: "create-project" | "generate-draft" | "update-project";
   fields: {
     title?: string;
     summary?: string | null;
@@ -68,7 +85,7 @@ export function meta({}: Route.MetaArgs) {
     {
       name: "description",
       content:
-        "Private TMAGen workspace for shaping story briefs, choosing fears and canon constraints, and previewing retrieval before draft generation.",
+        "Private TMAGen workspace for shaping story briefs, choosing fears and canon constraints, generating drafts, and inspecting retrieval provenance.",
     },
   ];
 }
@@ -87,6 +104,8 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const flash =
     url.searchParams.get("created") === "1"
       ? "Story brief created."
+      : url.searchParams.get("generated") === "1"
+        ? "Draft generated."
       : url.searchParams.get("saved") === "1"
         ? "Story brief saved."
         : null;
@@ -132,7 +151,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     const { data: versionData, error: versionsError } = await supabase
       .from("story_versions")
       .select(
-        "id, story_project_id, version_number, visibility, created_at, revision_notes, model_name",
+        "id, story_project_id, parent_version_id, version_number, visibility, created_at, revision_notes, model_name, content_markdown, prompt_snapshot, retrieval_snapshot, generation_metadata",
       )
       .in("story_project_id", projectIds)
       .order("created_at", { ascending: false });
@@ -147,11 +166,16 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     versionRows = (versionData ?? []).map((row) => ({
       id: row.id,
       storyProjectId: row.story_project_id,
+      parentVersionId: row.parent_version_id,
       versionNumber: row.version_number,
       visibility: row.visibility,
       createdAt: row.created_at,
       revisionNotes: row.revision_notes,
       modelName: row.model_name,
+      contentMarkdown: row.content_markdown,
+      promptSnapshot: asRecord(row.prompt_snapshot),
+      retrievalSnapshot: Array.isArray(row.retrieval_snapshot) ? row.retrieval_snapshot : [],
+      generationMetadata: asRecord(row.generation_metadata),
     }));
   }
 
@@ -189,11 +213,50 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const selectedProjectVersions = selectedProject
     ? versionsByProject.get(selectedProject.id) ?? []
     : [];
+  const selectedVersion = selectedProjectVersions[0] ?? null;
+  let selectedVersionLinks: StoryEpisodeLink[] = [];
+
+  if (selectedVersion) {
+    const { data: linkRows, error: linksError } = await supabase
+      .from("story_episode_links")
+      .select(
+        "episode_id, chunk_ids, relevance_score, usage_reason, episodes!inner(episode_number, slug, title)",
+      )
+      .eq("story_version_id", selectedVersion.id)
+      .order("relevance_score", { ascending: false });
+
+    if (linksError) {
+      throw data(
+        { message: `Failed to load story provenance links: ${linksError.message}` },
+        { status: 500, headers: responseHeaders },
+      );
+    }
+
+    selectedVersionLinks = (linkRows ?? []).flatMap((row) => {
+      const episode = Array.isArray(row.episodes) ? row.episodes[0] : row.episodes;
+
+      if (!episode) {
+        return [];
+      }
+
+      return [
+        {
+          episodeId: row.episode_id,
+          episodeNumber: episode.episode_number,
+          episodeSlug: episode.slug,
+          episodeTitle: episode.title,
+          chunkIds: row.chunk_ids ?? [],
+          relevanceScore: row.relevance_score,
+          usageReason: row.usage_reason,
+        } satisfies StoryEpisodeLink,
+      ];
+    });
+  }
 
   let retrieval: RetrievalProbe | null = null;
 
   if (selectedProject) {
-    const retrievalQuery = buildProjectRetrievalQuery(selectedProject);
+    const retrievalQuery = buildStoryRetrievalQuery(selectedProject);
 
     if (retrievalQuery) {
       retrieval = await runChunkRetrievalProbe({
@@ -213,12 +276,14 @@ export async function loader({ request, context }: Route.LoaderArgs) {
       projects,
       retrieval,
       selectedProject,
+      selectedVersion,
+      selectedVersionLinks,
       selectedProjectVersions,
       summary: {
         draftVersionCount: versionRows.length,
         projectCount: projects.length,
         publicProjectCount: projects.filter((project) => project.visibility === "public").length,
-        seededProjectCount: projects.filter((project) => buildProjectRetrievalQuery(project)).length,
+        seededProjectCount: projects.filter((project) => buildStoryRetrievalQuery(project)).length,
       },
       viewer,
     },
@@ -255,46 +320,116 @@ export async function action({ request, context }: Route.ActionArgs) {
     fields.selectedFearSlugs.filter((fearSlug) => fearSlugs.has(fearSlug)),
   );
 
-  if (!fields.title) {
-    return data<ActionData>(
-      {
-        error: "Title is required.",
-        fields: {
-          ...fields,
-          selectedFearSlugs,
+  if (intent === "generate-draft") {
+    if (!fields.projectId) {
+      return data<ActionData>(
+        {
+          error: "Missing story project.",
+          fields: { projectId: fields.projectId },
+          intent: "generate-draft",
         },
-        intent: intent === "update-project" ? "update-project" : "create-project",
-      },
-      { headers: responseHeaders, status: 400 },
-    );
+        { headers: responseHeaders, status: 400 },
+      );
+    }
+
+    const { data: projectRow, error: projectError } = await supabase
+      .from("story_projects")
+      .select(
+        "id, title, slug, summary, seed_prompt, canon_mode, cast_policy, selected_fear_slugs, visibility",
+      )
+      .eq("id", fields.projectId)
+      .single();
+
+    if (projectError || !projectRow) {
+      return data<ActionData>(
+        {
+          error: `Failed to load story project: ${projectError?.message ?? "Unknown error"}`,
+          fields: { projectId: fields.projectId },
+          intent: "generate-draft",
+        },
+        { headers: responseHeaders, status: 400 },
+      );
+    }
+
+    try {
+      await generateStoryVersionFromProject({
+        adminClient: createSupabaseAdminClient(env),
+        env,
+        fears: await loadFearOptions(supabase),
+        project: {
+          id: projectRow.id,
+          title: projectRow.title,
+          slug: projectRow.slug,
+          summary: projectRow.summary,
+          seedPrompt: projectRow.seed_prompt,
+          canonMode: projectRow.canon_mode,
+          castPolicy: projectRow.cast_policy,
+          selectedFearSlugs: projectRow.selected_fear_slugs ?? [],
+          visibility: projectRow.visibility,
+        },
+        supabase,
+      });
+    } catch (error) {
+      return data<ActionData>(
+        {
+          error: formatError(error),
+          fields: { projectId: fields.projectId },
+          intent: "generate-draft",
+        },
+        { headers: responseHeaders, status: 400 },
+      );
+    }
+
+    return redirect(`/workspace?project=${projectRow.slug}&generated=1`, {
+      headers: responseHeaders,
+    });
   }
 
-  if (!isAllowed(CANON_MODES, fields.canonMode) || !isAllowed(CAST_POLICIES, fields.castPolicy)) {
-    return data<ActionData>(
-      {
-        error: "The selected canon or cast option is invalid.",
-        fields: {
-          ...fields,
-          selectedFearSlugs,
+  if (intent === "create-project" || intent === "update-project") {
+    if (!fields.title) {
+      return data<ActionData>(
+        {
+          error: "Title is required.",
+          fields: {
+            ...fields,
+            selectedFearSlugs,
+          },
+          intent,
         },
-        intent: intent === "update-project" ? "update-project" : "create-project",
-      },
-      { headers: responseHeaders, status: 400 },
-    );
-  }
+        { headers: responseHeaders, status: 400 },
+      );
+    }
 
-  if (!isAllowed(VISIBILITIES, fields.visibility)) {
-    return data<ActionData>(
-      {
-        error: "The selected visibility is invalid.",
-        fields: {
-          ...fields,
-          selectedFearSlugs,
+    if (
+      !isAllowed(CANON_MODES, fields.canonMode) ||
+      !isAllowed(CAST_POLICIES, fields.castPolicy)
+    ) {
+      return data<ActionData>(
+        {
+          error: "The selected canon or cast option is invalid.",
+          fields: {
+            ...fields,
+            selectedFearSlugs,
+          },
+          intent,
         },
-        intent: intent === "update-project" ? "update-project" : "create-project",
-      },
-      { headers: responseHeaders, status: 400 },
-    );
+        { headers: responseHeaders, status: 400 },
+      );
+    }
+
+    if (!isAllowed(VISIBILITIES, fields.visibility)) {
+      return data<ActionData>(
+        {
+          error: "The selected visibility is invalid.",
+          fields: {
+            ...fields,
+            selectedFearSlugs,
+          },
+          intent,
+        },
+        { headers: responseHeaders, status: 400 },
+      );
+    }
   }
 
   if (intent === "create-project") {
@@ -395,8 +530,18 @@ export async function action({ request, context }: Route.ActionArgs) {
 }
 
 export default function Workspace({ actionData, loaderData }: Route.ComponentProps) {
-  const { fearOptions, flash, projects, retrieval, selectedProject, selectedProjectVersions, summary, viewer } =
-    loaderData;
+  const {
+    fearOptions,
+    flash,
+    projects,
+    retrieval,
+    selectedProject,
+    selectedProjectVersions,
+    selectedVersion,
+    selectedVersionLinks,
+    summary,
+    viewer,
+  } = loaderData;
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
   const createFields =
@@ -442,12 +587,12 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
             Creator Workspace
           </p>
           <h1 className="mt-4 font-display text-4xl text-stone-50">
-            Shape the brief before draft generation exists
+            Shape the brief and generate archive-grounded drafts
           </h1>
           <p className="mt-4 max-w-3xl text-sm leading-7 text-stone-300">
             Signed in as {viewer.profile?.displayName ?? viewer.user.displayName}. This route stores
-            project-level canon controls, fear selection, and prompt seeds under your account so the
-            later drafting step has a stable place to start.
+            project-level canon controls, fear selection, and prompt seeds under your account, then
+            turns them into immutable drafts with captured retrieval provenance.
           </p>
         </div>
 
@@ -647,9 +792,9 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
                       {selectedProject.title}
                     </h2>
                     <p className="mt-4 max-w-3xl text-sm leading-7 text-stone-300">
-                      This is the durable project shell that later draft generation will target. The
-                      fields below become the starting brief, and the retrieval preview uses them right
-                      now so you can tune the constraints before any draft is written.
+                      This is the durable project shell for retrieval and generation. The fields below
+                      become the starting brief, and the retrieval preview lets you tune the
+                      constraints before generating a new immutable version.
                     </p>
                   </div>
 
@@ -732,6 +877,12 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
                     />
                   </div>
 
+                  <p className="text-sm leading-7 text-stone-400">
+                    Strict keeps canon facts intact. Adjacent stays canon-compatible while exploring
+                    new corners. AU means Alternate Universe: the setting, roles, or timeline can
+                    change deliberately as long as the fear logic and internal consistency still hold.
+                  </p>
+
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">
                       Fear selection
@@ -768,6 +919,18 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
                     className="rounded-full border border-amber-400/40 bg-amber-500/10 px-5 py-3 text-xs font-semibold uppercase tracking-[0.22em] text-amber-100 transition hover:border-amber-300/60 hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {isSubmitting ? "Saving..." : "Save brief"}
+                  </button>
+                </Form>
+
+                <Form method="post" className="mt-5">
+                  <input type="hidden" name="intent" value="generate-draft" />
+                  <input type="hidden" name="projectId" value={selectedProject.id} />
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || !buildStoryRetrievalQuery(selectedProject)}
+                    className="rounded-full border border-emerald-500/35 bg-emerald-500/10 px-5 py-3 text-xs font-semibold uppercase tracking-[0.22em] text-emerald-100 transition hover:border-emerald-300/55 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isSubmitting ? "Generating..." : "Generate draft version"}
                   </button>
                 </Form>
               </article>
@@ -866,7 +1029,7 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
                 ) : (
                   <p className="mt-6 text-sm leading-7 text-stone-400">
                     Add a seed prompt or summary first. Once the brief has some shape, retrieval
-                    preview will show the chunks most likely to ground the future draft.
+                    preview will show the chunks most likely to ground the next draft.
                   </p>
                 )}
               </article>
@@ -878,7 +1041,7 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
                       Story versions
                     </p>
                     <h3 className="mt-3 font-display text-3xl text-stone-50">
-                      Immutable drafts will appear here
+                      Immutable drafts and provenance snapshots
                     </h3>
                   </div>
                   <span className="rounded-full border border-stone-700 px-3 py-1 text-xs uppercase tracking-[0.22em] text-stone-300">
@@ -887,45 +1050,121 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
                 </div>
 
                 {selectedProjectVersions.length > 0 ? (
-                  <div className="mt-6 grid gap-3">
-                    {selectedProjectVersions.map((version) => (
-                      <article
-                        key={version.id}
-                        className="rounded-[1.4rem] border border-stone-800 bg-stone-900/70 p-4"
-                      >
-                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="mt-6 space-y-6">
+                    {selectedVersion ? (
+                      <article className="rounded-[1.5rem] border border-stone-800 bg-stone-900/75 p-5">
+                        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                           <div>
                             <p className="text-xs uppercase tracking-[0.24em] text-stone-500">
-                              Version {version.versionNumber}
+                              Latest draft
                             </p>
-                            <p className="mt-2 text-sm text-stone-300">
-                              {version.modelName ?? "Model not captured yet"}
-                            </p>
+                            <h4 className="mt-2 font-display text-3xl text-stone-50">
+                              Version {selectedVersion.versionNumber}
+                            </h4>
                           </div>
                           <div className="text-sm text-stone-300">
                             <p>
-                              <span className="text-stone-500">Visibility:</span>{" "}
-                              {version.visibility}
+                              <span className="text-stone-500">Model:</span>{" "}
+                              {selectedVersion.modelName ?? "Unknown"}
                             </p>
                             <p className="mt-2">
                               <span className="text-stone-500">Created:</span>{" "}
-                              {formatDate(version.createdAt)}
+                              {formatDate(selectedVersion.createdAt)}
                             </p>
                           </div>
                         </div>
 
-                        {version.revisionNotes ? (
-                          <p className="mt-4 text-sm leading-6 text-stone-300">
-                            {version.revisionNotes}
-                          </p>
-                        ) : null}
+                        <pre className="mt-6 max-h-[900px] overflow-auto whitespace-pre-wrap rounded-[1.4rem] border border-stone-800 bg-stone-950/80 p-5 text-sm leading-7 text-stone-200">
+                          {selectedVersion.contentMarkdown}
+                        </pre>
                       </article>
-                    ))}
+                    ) : null}
+
+                    {selectedVersionLinks.length > 0 ? (
+                      <article className="rounded-[1.5rem] border border-stone-800 bg-stone-900/75 p-5">
+                        <p className="text-xs uppercase tracking-[0.24em] text-stone-500">
+                          Latest draft provenance
+                        </p>
+                        <div className="mt-4 grid gap-3">
+                          {selectedVersionLinks.map((link) => (
+                            <article
+                              key={link.episodeId}
+                              className="rounded-[1.2rem] border border-stone-800 bg-stone-950/80 p-4"
+                            >
+                              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                                <div>
+                                  <p className="text-xs uppercase tracking-[0.24em] text-stone-500">
+                                    MAG {String(link.episodeNumber).padStart(3, "0")}
+                                  </p>
+                                  <h5 className="mt-2 font-display text-2xl text-stone-50">
+                                    {link.episodeTitle}
+                                  </h5>
+                                </div>
+                                <div className="text-sm text-stone-300">
+                                  <p>
+                                    <span className="text-stone-500">Chunks:</span>{" "}
+                                    {formatNumber(link.chunkIds.length)}
+                                  </p>
+                                  <p className="mt-2">
+                                    <span className="text-stone-500">Relevance:</span>{" "}
+                                    {link.relevanceScore !== null
+                                      ? link.relevanceScore.toFixed(3)
+                                      : "Not scored"}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {link.usageReason ? (
+                                <p className="mt-4 text-sm leading-6 text-stone-300">
+                                  {link.usageReason}
+                                </p>
+                              ) : null}
+                            </article>
+                          ))}
+                        </div>
+                      </article>
+                    ) : null}
+
+                    <div className="grid gap-3">
+                      {selectedProjectVersions.map((version) => (
+                        <article
+                          key={version.id}
+                          className="rounded-[1.4rem] border border-stone-800 bg-stone-900/70 p-4"
+                        >
+                          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                            <div>
+                              <p className="text-xs uppercase tracking-[0.24em] text-stone-500">
+                                Version {version.versionNumber}
+                              </p>
+                              <p className="mt-2 text-sm text-stone-300">
+                                {version.modelName ?? "Model not captured yet"}
+                              </p>
+                            </div>
+                            <div className="text-sm text-stone-300">
+                              <p>
+                                <span className="text-stone-500">Visibility:</span>{" "}
+                                {version.visibility}
+                              </p>
+                              <p className="mt-2">
+                                <span className="text-stone-500">Created:</span>{" "}
+                                {formatDate(version.createdAt)}
+                              </p>
+                            </div>
+                          </div>
+
+                          {version.revisionNotes ? (
+                            <p className="mt-4 text-sm leading-6 text-stone-300">
+                              {version.revisionNotes}
+                            </p>
+                          ) : null}
+                        </article>
+                      ))}
+                    </div>
                   </div>
                 ) : (
                   <p className="mt-6 text-sm leading-7 text-stone-400">
-                    No draft exists yet. The next step after this workspace is generating the first
-                    immutable story version with a captured prompt snapshot and retrieval snapshot.
+                    No draft exists yet. Generate the first immutable story version to capture the
+                    prompt snapshot, retrieval packet, and source links.
                   </p>
                 )}
               </article>
@@ -1002,22 +1241,6 @@ function buildWorkspaceHref(projectSlug: string) {
   return `/workspace?project=${encodeURIComponent(projectSlug)}`;
 }
 
-function buildProjectRetrievalQuery(project: {
-  title: string;
-  summary: string | null;
-  seedPrompt: string | null;
-}) {
-  const prompt = normalizeTextarea(project.seedPrompt);
-
-  if (prompt) {
-    return prompt;
-  }
-
-  const summary = normalizeTextarea(project.summary);
-
-  return [project.title.trim(), summary].filter(Boolean).join(". ");
-}
-
 async function loadFearSlugSet(
   supabase: Awaited<ReturnType<typeof getViewer>>["supabase"],
 ) {
@@ -1028,6 +1251,25 @@ async function loadFearSlugSet(
   }
 
   return new Set((data ?? []).map((row) => row.slug));
+}
+
+async function loadFearOptions(
+  supabase: Awaited<ReturnType<typeof getViewer>>["supabase"],
+) {
+  const { data, error } = await supabase
+    .from("fears")
+    .select("slug, name, description")
+    .order("sort_order", { ascending: true });
+
+  if (error) {
+    throw new Error(`Failed to load fear taxonomy: ${error.message}`);
+  }
+
+  return (data ?? []).map((row) => ({
+    slug: row.slug,
+    name: row.name,
+    description: row.description,
+  }));
 }
 
 async function reserveUniqueStorySlug({
@@ -1124,4 +1366,20 @@ function formatDate(value: string | null) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  return value as Record<string, unknown>;
+}
+
+function formatError(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return String(error);
 }

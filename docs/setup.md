@@ -259,8 +259,8 @@ What this does:
 - seeds `episode_chunks.fear_slugs` from the episode-level fear assignments
 - stores `embedding_model` and `embedding_generated_at` in chunk metadata for auditability
 
-After this finishes, sign in to `/workspace` to preview retrieval against a story brief, or use `/account`
-for the lower-level transcript retrieval probe.
+After this finishes, sign in to `/workspace` to create a brief, preview retrieval, and generate the
+first draft version, or use `/account` for the lower-level transcript retrieval probe.
 
 ## 9. Configure Cloudflare
 
@@ -351,7 +351,7 @@ If a client prompts for OAuth when you first use a server, complete that in the 
 
 Once the steps above are complete, the next implementation target should be:
 
-1. creator-side story project workflow
-2. draft generation and revision history
-3. provenance links from generated drafts back to chunk retrieval hits
+1. creator-side revision and regenerate flow
+2. richer provenance presentation from generated drafts back to chunk retrieval hits
+3. broader retrieval-quality validation against real briefs
 4. the public archive feed
