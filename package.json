@@ -6,6 +6,7 @@
   ],
   "scripts": {
     "build": "npm --prefix apps/web run build",
+    "capture:showcase": "node scripts/capture-showcase-screenshots.mjs --env-file ./apps/web/.dev.vars",
     "cf-typegen": "npm --prefix apps/web run cf-typegen",
     "create:showcase": "node scripts/create-showcase-story.mjs --env-file ./apps/web/.dev.vars",
     "deploy:web": "npm --prefix apps/web run deploy",

@@ -51,6 +51,7 @@ npm run generate:embeddings
 npm run evaluate:retrieval
 npm run create:showcase
 npm run reformat:showcase
+npm run capture:showcase
 npm run smoke:web -- --base-url https://tmagen-web.kristian-jackson.workers.dev
 ```
 

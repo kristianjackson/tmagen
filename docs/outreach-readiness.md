@@ -56,6 +56,12 @@ To roll the current showcase set forward after a prompt/formatting change:
 npm run reformat:showcase
 ```
 
+To refresh the screenshot bundles without generating new story versions:
+
+```bash
+npm run capture:showcase
+```
+
 ## Current Showcase Set
 
 Current live archive:
