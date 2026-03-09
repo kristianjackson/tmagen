@@ -2,9 +2,7 @@ import { data, Link, useRouteLoaderData } from "react-router";
 
 import type { Route } from "./+types/home";
 import type { AppEnv } from "../lib/env.server";
-import {
-  listPublishedStorySummaries,
-} from "../lib/published-stories.server";
+import { listPublishedStorySummaries } from "../lib/published-stories.server";
 import {
   buildPublishedStoryPath,
   buildPublishedStoryVersionPath,
@@ -13,26 +11,49 @@ import { createSupabaseAdminClient } from "../lib/supabase/admin.server";
 import type { loader as rootLoader } from "../root";
 
 const productPillars = [
-  "Transcript-grounded generation instead of blind prompting",
-  "Immutable story versions with provenance back to source episodes",
-  "A public archive feed plus a private creator workspace",
+  "Grounded in official transcript material instead of blind prompting",
+  "Immutable story versions with visible provenance back to source episodes",
+  "A private creator loop that can publish exact public versions on purpose",
 ];
 
-const workflow = [
+const demoSteps = [
   {
     step: "01",
-    title: "Prepare the archive",
-    body: "Extract PDFs, clean transcript text, generate metadata, and chunk the corpus for search and embeddings.",
+    title: "Sign in and open the workspace",
+    body: "Start from a private creator surface built for briefs, fear selection, canon controls, and retrieval-backed generation.",
   },
   {
     step: "02",
-    title: "Shape the brief",
-    body: "Users choose canon mode, cast policy, fears, prompt seed, and whether the concept should be random.",
+    title: "Generate from the archive",
+    body: "Drafts are built from transcript-grounded retrieval packets instead of disconnected prompting, with the source evidence preserved.",
   },
   {
     step: "03",
-    title: "Publish intentionally",
-    body: "Drafts stay private until a specific version is published, then the archive gets a stable reader route and current public link.",
+    title: "Revise without losing history",
+    body: "Each revision becomes a child version with stored notes, feedback, prompts, and retrieval context rather than replacing the original.",
+  },
+  {
+    step: "04",
+    title: "Publish the exact version you mean",
+    body: "Only the chosen version goes public, with stable reader routes and a clear separation between creator controls and reader presentation.",
+  },
+];
+
+const sourceLinks = [
+  {
+    label: "Rusty Quill",
+    href: "https://rustyquill.com/",
+    description: "Official site for the studio behind The Magnus Archives.",
+  },
+  {
+    label: "The Magnus Archives",
+    href: "https://rustyquill.com/show/the-magnus-archives/",
+    description: "Official show page with listening links and series information.",
+  },
+  {
+    label: "Official transcripts",
+    href: "https://rustyquill.com/transcripts/the-magnus-archives",
+    description: "Rusty Quill's transcript archive for The Magnus Archives.",
   },
 ];
 
@@ -52,11 +73,11 @@ export async function loader({ context }: Route.LoaderArgs) {
 
 export function meta({}: Route.MetaArgs) {
   return [
-    { title: "TMAGen | Archive-Born Fan Fiction" },
+    { title: "TMAGen | Unofficial Magnus Fan Story Lab" },
     {
       name: "description",
       content:
-        "TMAGen is a Cloudflare-hosted, Supabase-backed writing platform for archive-aware fan fiction inspired by The Magnus Archives.",
+        "TMAGen is an unofficial fan-made writing platform inspired by The Magnus Archives, built around transcript-grounded generation, revision history, and intentional publishing.",
     },
   ];
 }
@@ -81,7 +102,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
               TMAGen
             </p>
             <p className="mt-1 text-xs text-stone-400">
-              Cloudflare-hosted archive fiction engine
+              Unofficial fan-made writing project inspired by The Magnus Archives
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -92,7 +113,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
               {viewer ? "Open Workspace" : "Sign In"}
             </Link>
             <div className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-emerald-200">
-              Publishing live
+              Creator loop live
             </div>
           </div>
         </header>
@@ -100,15 +121,16 @@ export default function Home({ loaderData }: Route.ComponentProps) {
         <section className="grid gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:items-start">
           <div>
             <p className="text-sm uppercase tracking-[0.36em] text-stone-400">
-              Archive-born drafting
+              Built with gratitude for Rusty Quill
             </p>
             <h1 className="mt-5 max-w-4xl font-display text-5xl leading-[1.02] text-stone-50 sm:text-6xl lg:text-7xl">
-              Build fan fiction from a curated horror archive, then publish the exact version that earns it.
+              A respectful fan-built story lab for The Magnus Archives, grounded in the archive instead of guessing at it.
             </h1>
             <p className="mt-6 max-w-2xl text-base leading-8 text-stone-300 sm:text-lg">
-              TMAGen is a multiuser writing platform where transcript-grounded retrieval, explicit fear
-              selection, canon controls, revision history, and public story publication are part of the
-              product model rather than bolted on afterward.
+              TMAGen is an unofficial fan project built out of love for the podcast and the creative
+              impact it has had on my life. It uses Rusty Quill&apos;s published Magnus material as the
+              grounding layer for generation, revision, provenance, and public reading so the work can
+              stay closer to the source it celebrates.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link
@@ -117,6 +139,12 @@ export default function Home({ loaderData }: Route.ComponentProps) {
               >
                 {viewer ? `Continue as ${viewer.user.displayName}` : "Create Account"}
               </Link>
+              <a
+                href="#demo-path"
+                className="rounded-full border border-stone-700 bg-stone-950/80 px-5 py-3 text-sm font-semibold uppercase tracking-[0.22em] text-stone-100 transition hover:border-stone-500 hover:bg-stone-900"
+              >
+                See Demo Path
+              </a>
               <a
                 href="https://github.com/kristianjackson/tmagen"
                 className="rounded-full border border-stone-700 bg-stone-950/80 px-5 py-3 text-sm font-semibold uppercase tracking-[0.22em] text-stone-100 transition hover:border-stone-500 hover:bg-stone-900"
@@ -134,11 +162,21 @@ export default function Home({ loaderData }: Route.ComponentProps) {
                 </span>
               ))}
             </div>
+            <div className="mt-8 max-w-3xl rounded-[1.8rem] border border-amber-500/20 bg-amber-500/10 p-5">
+              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-amber-200">
+                Source and attribution
+              </p>
+              <p className="mt-3 text-sm leading-7 text-amber-50/90">
+                TMAGen is an unofficial fan-made project. The source material belongs to Rusty Quill
+                and <em>The Magnus Archives</em>. This site exists to celebrate that work, not replace
+                it.
+              </p>
+            </div>
           </div>
 
           <aside className="rounded-[2rem] border border-stone-800/80 bg-stone-950/85 p-6 shadow-2xl shadow-black/30">
             <p className="text-xs font-semibold uppercase tracking-[0.32em] text-stone-400">
-              Build status
+              What works right now
             </p>
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
               {buildStatus.map((item) => (
@@ -155,17 +193,51 @@ export default function Home({ loaderData }: Route.ComponentProps) {
             </div>
             <div className="mt-6 rounded-2xl border border-amber-500/25 bg-amber-500/10 p-4">
               <p className="text-xs uppercase tracking-[0.28em] text-amber-200">
-                Immediate goal
+                Fastest walkthrough
               </p>
               <p className="mt-3 text-sm leading-7 text-amber-50/90">
-                Move from revision into strong public reading surfaces: publish exact versions, keep
-                reader URLs stable, and separate creator controls from public presentation.
+                Sign in, create a brief, generate a draft, revise it once, publish the chosen version,
+                and open the public reader. The core creator-to-reader loop is live now.
               </p>
             </div>
           </aside>
         </section>
 
         <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+          <div
+            id="demo-path"
+            className="rounded-[2rem] border border-stone-800/80 bg-stone-950/80 p-6"
+          >
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.32em] text-stone-400">
+                  Demo path
+                </p>
+                <h2 className="mt-3 font-display text-3xl text-stone-50">
+                  The whole product loop fits in a short, legible walkthrough.
+                </h2>
+              </div>
+              <span className="hidden rounded-full border border-stone-700 px-3 py-1 text-xs uppercase tracking-[0.22em] text-stone-300 md:inline-flex">
+                Under a minute
+              </span>
+            </div>
+
+            <div className="mt-8 grid gap-4 md:grid-cols-2">
+              {demoSteps.map((item) => (
+                <article
+                  key={item.step}
+                  className="rounded-[1.6rem] border border-stone-800 bg-[linear-gradient(145deg,rgba(28,24,22,0.96),rgba(16,16,16,0.92))] p-5"
+                >
+                  <p className="text-xs font-semibold uppercase tracking-[0.34em] text-stone-500">
+                    Step {item.step}
+                  </p>
+                  <h3 className="mt-3 font-display text-2xl text-stone-50">{item.title}</h3>
+                  <p className="mt-4 text-sm leading-7 text-stone-300">{item.body}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+
           <div className="rounded-[2rem] border border-stone-800/80 bg-stone-950/80 p-6">
             <div className="flex items-center justify-between gap-4">
               <div>
@@ -243,21 +315,53 @@ export default function Home({ loaderData }: Route.ComponentProps) {
               </div>
             )}
           </div>
+        </section>
 
-          <div className="space-y-4">
-            {workflow.map((item) => (
-              <article
-                key={item.step}
-                className="rounded-[1.8rem] border border-stone-800/80 bg-stone-950/75 p-6"
-              >
-                <p className="text-xs font-semibold uppercase tracking-[0.34em] text-stone-500">
-                  Step {item.step}
-                </p>
-                <h3 className="mt-3 font-display text-3xl text-stone-50">{item.title}</h3>
-                <p className="mt-4 text-sm leading-7 text-stone-300">{item.body}</p>
-              </article>
-            ))}
-          </div>
+        <section className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
+          <article className="rounded-[2rem] border border-stone-800/80 bg-stone-950/75 p-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.32em] text-stone-400">
+              Why this exists
+            </p>
+            <h2 className="mt-3 font-display text-3xl text-stone-50">
+              The goal is not to automate affection away. It is to build with enough care that the archive still feels present.
+            </h2>
+            <p className="mt-5 text-sm leading-7 text-stone-300">
+              TMAGen is built to keep the source material visible instead of hiding it behind a black-box
+              generation step. Drafts carry retrieval packets, revisions keep lineage, and public stories
+              point back to the archive material that shaped them.
+            </p>
+            <p className="mt-4 text-sm leading-7 text-stone-300">
+              That makes this a better writing tool, but it also makes it a better fan project: the work
+              it produces is easier to inspect, easier to question, and easier to discuss in relation to
+              the world Rusty Quill created.
+            </p>
+          </article>
+
+          <article className="rounded-[2rem] border border-stone-800/80 bg-stone-950/75 p-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.32em] text-stone-400">
+              Source material
+            </p>
+            <h2 className="mt-3 font-display text-3xl text-stone-50">
+              Start with the official work.
+            </h2>
+            <div className="mt-6 grid gap-4">
+              {sourceLinks.map((link) => (
+                <a
+                  key={link.label}
+                  href={link.href}
+                  className="rounded-[1.5rem] border border-stone-800 bg-stone-900/80 p-5 transition hover:border-stone-600 hover:bg-stone-900"
+                >
+                  <p className="text-xs font-semibold uppercase tracking-[0.28em] text-amber-300">
+                    {link.label}
+                  </p>
+                  <p className="mt-3 text-sm leading-7 text-stone-300">{link.description}</p>
+                  <p className="mt-4 text-xs uppercase tracking-[0.22em] text-stone-500">
+                    Open official source
+                  </p>
+                </a>
+              ))}
+            </div>
+          </article>
         </section>
       </div>
     </main>
