@@ -68,8 +68,20 @@ type StoryEpisodeLink = {
   episodeSlug: string;
   episodeTitle: string;
   chunkIds: string[];
+  chunkEvidence: StoryChunkEvidence[];
   relevanceScore: number | null;
   usageReason: string | null;
+};
+
+type StoryChunkEvidence = {
+  chunkId: string;
+  chunkIndex: number;
+  excerpt: string;
+  fearSlugs: string[];
+  fusedScore: number | null;
+  lexicalScore: number | null;
+  similarity: number | null;
+  sources: Array<"vector" | "lexical">;
 };
 
 type ActionData = {
@@ -251,9 +263,27 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const selectedVersion = selectedProjectVersions[0] ?? null;
   const selectedPublishedVersion =
     selectedProjectVersions.find((version) => version.publishedAt !== null) ?? null;
+  const storedChunkEvidenceByEpisodeId = new Map<string, StoryChunkEvidence[]>();
   let selectedVersionLinks: StoryEpisodeLink[] = [];
 
   if (selectedVersion) {
+    const storedChunkEvidence = parseStoredChunkEvidence(selectedVersion.retrievalSnapshot);
+
+    for (const evidence of storedChunkEvidence) {
+      const current = storedChunkEvidenceByEpisodeId.get(evidence.episodeId) ?? [];
+      current.push({
+        chunkId: evidence.chunkId,
+        chunkIndex: evidence.chunkIndex,
+        excerpt: evidence.excerpt,
+        fearSlugs: evidence.fearSlugs,
+        fusedScore: evidence.fusedScore,
+        lexicalScore: evidence.lexicalScore,
+        similarity: evidence.similarity,
+        sources: evidence.sources,
+      });
+      storedChunkEvidenceByEpisodeId.set(evidence.episodeId, current);
+    }
+
     const { data: linkRows, error: linksError } = await adminClient
       .from("story_episode_links")
       .select(
@@ -276,6 +306,18 @@ export async function loader({ request, context }: Route.LoaderArgs) {
         return [];
       }
 
+      const allowedChunkIds = new Set(
+        Array.isArray(row.chunk_ids)
+          ? row.chunk_ids
+              .filter((value): value is string => typeof value === "string")
+              .map((value) => value.trim())
+              .filter((value) => value.length > 0)
+          : [],
+      );
+      const chunkEvidence = (storedChunkEvidenceByEpisodeId.get(row.episode_id) ?? []).filter(
+        (evidence) => allowedChunkIds.has(evidence.chunkId),
+      );
+
       return [
         {
           episodeId: row.episode_id,
@@ -283,6 +325,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
           episodeSlug: episode.slug,
           episodeTitle: episode.title,
           chunkIds: row.chunk_ids ?? [],
+          chunkEvidence,
           relevanceScore: row.relevance_score,
           usageReason: row.usage_reason,
         } satisfies StoryEpisodeLink,
@@ -1132,6 +1175,11 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
   const selectedVersionGenerationLabel = selectedVersion
     ? readGenerationLabel(selectedVersion.generationMetadata)
     : null;
+  const selectedVersionUsageReason = dedupeStrings(
+    selectedVersionLinks
+      .map((link) => (typeof link.usageReason === "string" ? link.usageReason.trim() : ""))
+      .filter((value) => value.length > 0),
+  )[0] ?? null;
   const selectedVersionIsPublished =
     selectedVersion !== null && selectedPublishedVersion?.id === selectedVersion.id;
   const currentPublicStoryPath =
@@ -1506,6 +1554,17 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
                 retrieval packet used during generation.
               </p>
 
+              {selectedVersionUsageReason ? (
+                <div className="mt-4 rounded-[1.2rem] border border-stone-800 bg-stone-900/70 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">
+                    Provenance note
+                  </p>
+                  <p className="mt-3 text-sm leading-7 text-stone-300">
+                    {selectedVersionUsageReason}
+                  </p>
+                </div>
+              ) : null}
+
               {selectedVersionLinks.length > 0 ? (
                 <div className="mt-4 grid gap-3">
                   {selectedVersionLinks.map((link) => (
@@ -1525,6 +1584,55 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
                           ? `relevance ${link.relevanceScore.toFixed(3)}`
                           : "not scored"}
                       </p>
+
+                      {link.chunkEvidence.length > 0 ? (
+                        <div className="mt-4 grid gap-3">
+                          {link.chunkEvidence.map((chunk) => (
+                            <article
+                              key={chunk.chunkId}
+                              className="rounded-[1rem] border border-stone-800 bg-stone-950/80 p-4"
+                            >
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <p className="text-xs uppercase tracking-[0.24em] text-stone-500">
+                                  Chunk {chunk.chunkIndex + 1}
+                                </p>
+                                <div className="flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.2em]">
+                                  {chunk.sources.map((source) => (
+                                    <span
+                                      key={source}
+                                      className="rounded-full border border-stone-700 px-2 py-1 text-stone-200"
+                                    >
+                                      {source}
+                                    </span>
+                                  ))}
+                                  {chunk.fearSlugs.map((fearSlug) => (
+                                    <span
+                                      key={fearSlug}
+                                      className="rounded-full bg-stone-800 px-2 py-1 text-stone-200"
+                                    >
+                                      {fearSlug}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+
+                              <p className="mt-3 text-sm leading-7 text-stone-300">
+                                {chunk.excerpt}
+                              </p>
+                              <p className="mt-3 text-xs uppercase tracking-[0.22em] text-stone-500">
+                                Fused {formatNullableScore(chunk.fusedScore)} · similarity{" "}
+                                {formatNullableScore(chunk.similarity)} · lexical{" "}
+                                {formatNullableScore(chunk.lexicalScore)}
+                              </p>
+                            </article>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="mt-4 text-sm leading-7 text-stone-400">
+                          Persisted chunk ids exist for this episode, but the stored retrieval packet
+                          does not currently include chunk-level excerpts.
+                        </p>
+                      )}
                     </article>
                   ))}
                 </div>
@@ -2503,6 +2611,14 @@ function formatMetricNumber(value: number | null) {
   return formatNumber(value);
 }
 
+function formatNullableScore(value: number | null) {
+  if (value === null) {
+    return "n/a";
+  }
+
+  return value.toFixed(3);
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return {};
@@ -2566,4 +2682,57 @@ function formatError(error: unknown) {
   }
 
   return String(error);
+}
+
+function parseStoredChunkEvidence(snapshot: unknown[]) {
+  return snapshot
+    .map((value) => {
+      const record = asRecord(value);
+      const chunkId = readOptionalString(record.chunk_id);
+      const episodeId = readOptionalString(record.episode_id);
+      const excerpt = readOptionalString(record.excerpt);
+
+      if (!chunkId || !episodeId || !excerpt) {
+        return null;
+      }
+
+      return {
+        chunkId,
+        chunkIndex: readOptionalNumber(record.chunk_index) ?? 0,
+        episodeId,
+        excerpt,
+        fearSlugs: readStringArray(record.fear_slugs),
+        fusedScore: readOptionalNumber(record.fused_score),
+        lexicalScore: readOptionalNumber(record.lexical_score),
+        similarity: readOptionalNumber(record.similarity),
+        sources: readChunkSources(record.sources),
+      };
+    })
+    .filter((value): value is StoryChunkEvidence & { episodeId: string } => value !== null);
+}
+
+function readStringArray(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((entry): entry is string => typeof entry === "string")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
+function readChunkSources(value: unknown): Array<"vector" | "lexical"> {
+  return readStringArray(value).filter(
+    (entry): entry is "vector" | "lexical" => entry === "vector" || entry === "lexical",
+  );
+}
+
+function readOptionalString(value: unknown) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }

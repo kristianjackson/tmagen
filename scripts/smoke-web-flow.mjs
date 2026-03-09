@@ -3,6 +3,8 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
+import { loadScriptEnv } from "./lib/env.mjs";
+
 const DEFAULT_ENV_FILE = "./apps/web/.dev.vars";
 const DEFAULT_BASE_URL = "https://tmagen-web.kristian-jackson.workers.dev";
 const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
@@ -17,7 +19,7 @@ async function main() {
   }
 
   const envFile = path.resolve(args["env-file"] ?? DEFAULT_ENV_FILE);
-  const env = await loadEnvFile(envFile);
+  const env = await loadScriptEnv({ envFile });
   const baseUrl = normalizeBaseUrl(args["base-url"] ?? DEFAULT_BASE_URL);
   const keepUser = Boolean(args["keep-user"]);
   const jar = new CookieJar();
@@ -157,6 +159,8 @@ async function main() {
       step: "load revised draft",
     });
     ensureIncludes(revisedHtml, "Revision brief", "revised workspace");
+    ensureIncludes(revisedHtml, "Provenance note", "revised workspace provenance");
+    ensureIncludes(revisedHtml, "Fused", "chunk-level provenance evidence");
 
     const latestVersionId = requireFormFieldValue({
       fieldName: "versionId",
@@ -546,31 +550,6 @@ function normalizeBaseUrl(value) {
   return value.endsWith("/") ? value.slice(0, -1) : value;
 }
 
-async function loadEnvFile(filePath) {
-  const raw = await readFile(filePath, "utf8");
-  const env = {};
-
-  for (const line of raw.split(/\r?\n/)) {
-    const trimmed = line.trim();
-
-    if (!trimmed || trimmed.startsWith("#")) {
-      continue;
-    }
-
-    const separatorIndex = trimmed.indexOf("=");
-
-    if (separatorIndex === -1) {
-      continue;
-    }
-
-    const key = trimmed.slice(0, separatorIndex).trim();
-    const value = trimmed.slice(separatorIndex + 1).trim();
-    env[key] = stripWrappingQuotes(value);
-  }
-
-  return env;
-}
-
 function requireEnv(env, key) {
   const value = env[key];
 
@@ -591,17 +570,6 @@ function splitSetCookieHeader(value) {
 
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function stripWrappingQuotes(value) {
-  if (
-    (value.startsWith('"') && value.endsWith('"')) ||
-    (value.startsWith("'") && value.endsWith("'"))
-  ) {
-    return value.slice(1, -1);
-  }
-
-  return value;
 }
 
 async function safeReadText(response) {

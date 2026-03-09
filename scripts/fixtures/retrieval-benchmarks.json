@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "description": "Curated retrieval benchmark cases for core Magnus motifs and fear domains.",
+  "cases": [
+    {
+      "id": "lonely-apartment",
+      "title": "Isolation in an empty flat",
+      "query": "an empty apartment and the fear of being completely alone",
+      "fear_slugs": ["the-lonely"],
+      "expected_episode_numbers": [13, 159],
+      "expected_within_rank": 3,
+      "notes": "Should strongly surface Alone or the later Lonely benchmark The Last."
+    },
+    {
+      "id": "buried-cave",
+      "title": "Trapped underground in a cave",
+      "query": "getting trapped underground in a cave with no way back out",
+      "fear_slugs": ["the-buried"],
+      "expected_episode_numbers": [15],
+      "expected_within_rank": 3,
+      "notes": "Lost Johns' Cave should be one of the clearest Buried retrievals."
+    },
+    {
+      "id": "war-piper",
+      "title": "Haunted battlefield and trench music",
+      "query": "a haunted battlefield with strange piping in the trenches",
+      "fear_slugs": ["the-slaughter"],
+      "expected_episode_numbers": [7],
+      "expected_within_rank": 3,
+      "notes": "The Piper should rank highly for war and battlefield horror."
+    },
+    {
+      "id": "freefall-vast",
+      "title": "Endless falling through open sky",
+      "query": "falling forever through the open sky with nothing to hold onto",
+      "fear_slugs": ["the-vast"],
+      "expected_episode_numbers": [21, 198],
+      "expected_within_rank": 3,
+      "notes": "Freefall or the later Vast benchmark Precipice should validate Vast retrieval."
+    },
+    {
+      "id": "worms-corruption",
+      "title": "Worms under the skin",
+      "query": "worms crawling under the skin and a body being infested from the inside",
+      "fear_slugs": ["the-corruption"],
+      "expected_episode_numbers": [6, 32],
+      "expected_within_rank": 3,
+      "notes": "Either Squirm or Hive should hit very early."
+    },
+    {
+      "id": "spiders-web",
+      "title": "House full of spiders",
+      "query": "spiders crawling through a house and webs in every corner",
+      "fear_slugs": ["the-web"],
+      "expected_episode_numbers": [16],
+      "expected_within_rank": 3,
+      "notes": "Arachnophobia is the direct Web benchmark."
+    },
+    {
+      "id": "uncanny-neighbor",
+      "title": "Not-quite-human watcher across the street",
+      "query": "watching a not quite human figure across the street every day",
+      "fear_slugs": ["the-stranger"],
+      "expected_episode_numbers": [3],
+      "expected_within_rank": 3,
+      "notes": "Across The Street should validate Stranger retrieval."
+    },
+    {
+      "id": "spiral-corridors",
+      "title": "Impossible corridors and wrong doors",
+      "query": "impossible hallways and doors that lead somewhere wrong",
+      "fear_slugs": ["the-spiral"],
+      "expected_episode_numbers": [26, 35],
+      "expected_within_rank": 5,
+      "notes": "A Distortion or Old Passages should show up near the top."
+    }
+  ]
+}

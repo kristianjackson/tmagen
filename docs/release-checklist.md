@@ -6,13 +6,15 @@ Use this checklist before and immediately after deploying TMAGen.
 
 1. Run `npm run typecheck`.
 2. Run `npm run build`.
-3. Confirm any schema-dependent changes are already applied in Supabase.
-4. Confirm Cloudflare Worker secrets match the current local env values when required.
+3. Run `npm run evaluate:retrieval` and review any failing benchmark cases before shipping retrieval-sensitive changes.
+4. Confirm any schema-dependent changes are already applied in Supabase.
+5. Confirm Cloudflare Worker secrets match the current local env values when required.
 
 ## Deploy
 
 1. Run `npm run deploy:web`.
 2. Record the deployed Worker version from Wrangler output.
+3. Optionally trigger `.github/workflows/smoke-web.yml` from GitHub Actions if you want a hosted post-deploy validation run.
 
 ## Post-Deploy Smoke
 
@@ -47,6 +49,7 @@ What this covers:
 
 Rollback or halt further deploys if any of these fail:
 
+- the retrieval benchmark regresses unexpectedly on known benchmark briefs
 - auth cookies are not persisted after sign-in
 - generation fails for the smoke project
 - publish succeeds internally but the public routes do not update

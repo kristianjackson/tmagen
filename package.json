@@ -9,6 +9,7 @@
     "cf-typegen": "npm --prefix apps/web run cf-typegen",
     "deploy:web": "npm --prefix apps/web run deploy",
     "dev": "npm --prefix apps/web run dev",
+    "evaluate:retrieval": "node scripts/evaluate-retrieval.mjs --env-file ./apps/web/.dev.vars",
     "extract:transcripts": "node scripts/extract-transcripts.mjs --input ./tma_source_transcripts --output ./data/processed/episodes",
     "generate:embeddings": "node scripts/generate-chunk-embeddings.mjs --env-file ./apps/web/.dev.vars",
     "generate:metadata": "node scripts/generate-episode-metadata.mjs --env-file ./apps/web/.dev.vars",

@@ -14,8 +14,9 @@ The current system has these foundations in place:
 - revision-aware child versions with stored revision notes and feedback
 - published story routes and archive feed driven by explicit version publication
 - automated end-to-end smoke coverage for the core auth, workspace, revision, and publish loop
+- a first retrieval benchmark set and scoring script for known Magnus motifs
 - draft deletion and project deletion
-- provenance links from generated drafts back to source episodes
+- chunk-level provenance evidence in the workspace on top of persisted source links
 
 The main gap is no longer infrastructure. The main gap is product loop discipline: quality control, richer editorial tooling, and production polish.
 
@@ -49,10 +50,10 @@ Add operational discipline around retrieval quality and story generation quality
 
 Target outcomes:
 
-- define a small set of canonical story briefs for evaluation
+- expand the current benchmark set of canonical story briefs and keep it maintained
 - turn the existing smoke flow into a repeatable release check and CI candidate
 - validate retrieval quality against expected source material
-- improve provenance display from episode-level links to clearer chunk-level evidence
+- tighten the current chunk-level provenance display and make it easier to inspect
 - tighten failure handling around model output quality and retry policy
 
 Why this is second:
