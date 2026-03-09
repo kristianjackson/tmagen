@@ -50,6 +50,12 @@ This command:
 - captures screenshots into `/tmp/tmagen-showcase`
 - writes `/tmp/tmagen-showcase/manifest.json`
 
+To roll the current showcase set forward after a prompt/formatting change:
+
+```bash
+npm run reformat:showcase
+```
+
 ## Current Showcase Set
 
 Current live archive:

@@ -9,8 +9,8 @@ import { buildStoryRetrievalQuery } from "./story-generation";
 
 const DEFAULT_MODEL = "gpt-5-mini";
 const OPENAI_CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions";
-const INITIAL_SYSTEM_PROMPT_VERSION = "workspace-draft-v1";
-const REVISION_SYSTEM_PROMPT_VERSION = "workspace-revision-v1";
+const INITIAL_SYSTEM_PROMPT_VERSION = "workspace-draft-v2";
+const REVISION_SYSTEM_PROMPT_VERSION = "workspace-revision-v2";
 const MAX_RETRIEVAL_RESULTS = 8;
 const MAX_COMPLETION_TOKENS = 5000;
 const MAX_DRAFT_REQUEST_ATTEMPTS = 2;
@@ -494,12 +494,18 @@ function buildSystemPrompt({
 
 Writing controls:
 - Output markdown only.
-- Begin with a single H1 title, then write the story body in prose.
+- Begin with a single H1 title.
+- Use a statement-driven presentation by default:
+  - after the title, add a short intake/header line that frames the piece as a submitted account in original wording
+  - write the main body as a first-person statement or testimony
+  - you may end with a brief archival or operator note if it strengthens the format
 - Write a complete short story draft of roughly 900 to 1,600 words.
 - Keep the voice atmospheric, controlled, and readable rather than purple.
 - Do not mention being an AI, prompt instructions, source packets, or retrieval.
 - Avoid direct quotation from the source archive beyond a few words.
 - Favor original scenes over recap.
+- Keep the statement format recognizable without parodying or copying stock Magnus phrasing.
+- Treat the document frame as part of the fiction, not as decorative metadata.
 
 Canon mode guidance:
 - strict: remain fully compatible with established canon facts, timeline, and character status.
@@ -545,7 +551,7 @@ function buildUserPrompt({
 </story_brief>
 
 <task>
-Write the next story draft for this project. Use the retrieval packet as grounding material, but produce an original piece of fiction rather than summary or notes. Return a complete story draft with a clear beginning, escalation, and ending.
+Write the next story draft for this project. Use the retrieval packet as grounding material, but produce an original piece of fiction rather than summary or notes. Return a complete statement-format story draft with a clear beginning, escalation, and ending.
 </task>
 
 <retrieval_query>
@@ -554,7 +560,11 @@ ${escapeXml(retrieval.query)}
 
 <retrieval_packet>
 ${retrievalPacket}
-</retrieval_packet>${attempt > 1 ? "\n\n<retry_instruction>\nThe previous answer was too short. Retry from scratch and return a full story draft between 900 and 1,600 words.\n</retry_instruction>" : ""}`;
+</retrieval_packet>
+
+<format_expectation>
+Make the piece feel like a submitted statement being archived by a modern system. Keep the framing original, restrained, and recognizably in the wider statement tradition without copying stock lines.
+</format_expectation>${attempt > 1 ? "\n\n<retry_instruction>\nThe previous answer was too short. Retry from scratch and return a full statement-format story draft between 900 and 1,600 words.\n</retry_instruction>" : ""}`;
 }
 
 function buildRevisionUserPrompt({
@@ -585,7 +595,7 @@ function buildRevisionUserPrompt({
 </story_brief>
 
 <task>
-Revise the current draft using the revision instructions. Produce a full replacement draft in markdown, not notes, bullets, or commentary.
+Revise the current draft using the revision instructions. Produce a full replacement draft in markdown, not notes, bullets, or commentary. Preserve or strengthen the statement format unless the revision instructions explicitly say otherwise.
 </task>
 
 <revision_instructions>
@@ -602,7 +612,11 @@ ${escapeXml(retrieval.query)}
 
 <retrieval_packet>
 ${retrievalPacket}
-</retrieval_packet>${attempt > 1 ? "\n\n<retry_instruction>\nThe previous answer was too short. Retry from scratch and return a full replacement draft between 900 and 1,600 words.\n</retry_instruction>" : ""}`;
+</retrieval_packet>
+
+<format_expectation>
+Keep the piece in a recognizable statement/testimony format with an original intake frame and, if useful, a brief archival or operator note.
+</format_expectation>${attempt > 1 ? "\n\n<retry_instruction>\nThe previous answer was too short. Retry from scratch and return a full replacement statement-format draft between 900 and 1,600 words.\n</retry_instruction>" : ""}`;
 }
 
 function serializeRetrievalPacket(retrieval: RetrievalProbe) {
