@@ -351,7 +351,7 @@ If a client prompts for OAuth when you first use a server, complete that in the 
 
 Once the steps above are complete, the next implementation target should be:
 
-1. creator-side revision and regenerate flow
+1. publishing and reader routes for finished story versions
 2. richer provenance presentation from generated drafts back to chunk retrieval hits
 3. broader retrieval-quality validation against real briefs
-4. the public archive feed
+4. route-level smoke tests and regression checks around auth and workspace flows

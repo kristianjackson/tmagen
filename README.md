@@ -16,7 +16,7 @@ TMAGen is a Cloudflare-hosted, Supabase-backed fan-fiction platform inspired by 
 
 - `/`: public landing page
 - `/auth`: sign-up and sign-in
-- `/workspace`: private creator workspace for story briefs, draft generation, and retrieval provenance
+- `/workspace`: private creator workspace for story briefs, draft generation, revisions, and retrieval provenance
 - `/account`: internal transcript dashboard for corpus review and provenance inspection
 
 ## Repository Layout

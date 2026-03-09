@@ -11,39 +11,27 @@ The current system has these foundations in place:
 - chunk embeddings and hybrid retrieval
 - working auth and creator workspace
 - first-pass draft generation with prompt and retrieval snapshots
+- revision-aware child versions with stored revision notes and feedback
 - draft deletion and project deletion
 - provenance links from generated drafts back to source episodes
 
-The main gap is no longer infrastructure. The main gap is product loop depth: revision, publishing, and quality control.
+The main gap is no longer infrastructure. The main gap is product loop depth: publishing, public reading surfaces, and quality control.
+
+## Recently Completed
+
+### Revision Workflow
+
+Completed outcomes:
+
+- `Revise draft` action in the active draft view
+- immutable child versions via `parent_version_id`
+- revision instructions stored on the child version
+- applied revision feedback stored in `story_feedback`
+- live workspace lineage, revision brief display, and preserved provenance links
 
 ## Active Plan
 
-### 1. Revision Workflow
-
-Build revision-aware generation on top of immutable `story_versions`.
-
-Target outcomes:
-
-- add a `Revise draft` action to the active draft view
-- accept free-form revision instructions from the creator
-- generate a new child version with `parent_version_id`
-- store revision instructions alongside the new version
-- make version-to-version comparison possible in the workspace
-
-Why this is first:
-
-- one-shot generation is not enough for real writing
-- the schema already supports immutable version chains
-- this unlocks meaningful creator iteration without sacrificing auditability
-
-Implementation notes:
-
-- never overwrite draft content in place
-- always create a new `story_versions` row
-- capture prompt snapshot, retrieval snapshot, and revision instructions on every new version
-- preserve provenance even when retrieval is refreshed for a revision pass
-
-### 2. Publishing And Reader Surfaces
+### 1. Publishing And Reader Surfaces
 
 Turn private drafts into publishable stories and expose a proper reading experience.
 
@@ -55,7 +43,7 @@ Target outcomes:
 - build the public archive feed from published versions only
 - separate creator editing views from reader-facing presentation
 
-Why this is second:
+Why this is first:
 
 - revision needs a destination
 - the current workspace is a creation surface, not a reader surface
@@ -68,7 +56,7 @@ Implementation notes:
 - store published timestamps on the version actually exposed to readers
 - avoid leaking transcript-only or internal provenance data into the public UI
 
-### 3. Evaluation, Testing, And Retrieval Hardening
+### 2. Evaluation, Testing, And Retrieval Hardening
 
 Add operational discipline around retrieval quality and story generation quality.
 
@@ -80,7 +68,7 @@ Target outcomes:
 - improve provenance display from episode-level links to clearer chunk-level evidence
 - tighten failure handling around model output quality and retry policy
 
-Why this is third:
+Why this is second:
 
 - the system now works, but quality will drift unless measured
 - retrieval-first systems are only trustworthy if the seams are testable
@@ -93,13 +81,34 @@ Implementation notes:
 - prefer structured generation metadata over ad hoc logs
 - surface model usage and retrieval packet size in the UI for easier debugging
 
+### 3. Richer Editorial Controls And Provenance
+
+Deepen the creator loop now that revision exists.
+
+Target outcomes:
+
+- add regeneration controls that let the creator choose whether retrieval should be refreshed
+- improve provenance display from episode-level links to chunk-level evidence where useful
+- add richer editorial transforms such as title rewrites, tone shifts, and canon checks
+- make version-to-version comparison easier in the workspace
+
+Why this is third:
+
+- the basic revision loop works, but it is still coarse
+- provenance can be more transparent than a flat episode list
+- editorial tools matter more once publishable versions exist
+
+Implementation notes:
+
+- keep retrieval refresh explicit rather than implicit
+- never lose the original retrieval snapshot when creating derived versions
+- prefer additive editorial tools over mutable in-place editing
+- keep provenance readable enough for creators without exposing internal-only detail in public views
+
 ## Later Backlog
 
 After the active plan, likely follow-on work is:
 
-- chunk-level provenance display inside stories
-- regeneration controls that let the user choose whether retrieval should be refreshed
-- richer editorial tools such as title rewrites, tone shifts, and canon checks
 - admin or operator roles for the transcript dashboard
 - custom domain and production smoke monitoring
 

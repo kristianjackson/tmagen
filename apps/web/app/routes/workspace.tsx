@@ -2,7 +2,10 @@ import { data, Form, Link, redirect, useNavigation } from "react-router";
 
 import type { Route } from "./+types/workspace";
 import type { AppEnv } from "../lib/env.server";
-import { generateStoryVersionFromProject } from "../lib/story-generation.server";
+import {
+  generateStoryVersionFromProject,
+  reviseStoryVersionFromProject,
+} from "../lib/story-generation.server";
 import {
   runChunkRetrievalProbe,
   type RetrievalProbe,
@@ -71,6 +74,7 @@ type ActionData = {
     | "delete-draft"
     | "delete-project"
     | "generate-draft"
+    | "revise-draft"
     | "update-project";
   fields: {
     title?: string;
@@ -80,6 +84,7 @@ type ActionData = {
     castPolicy?: string;
     visibility?: string;
     projectId?: string;
+    revisionInstructions?: string | null;
     selectedFearSlugs?: string[];
     versionId?: string;
   };
@@ -110,6 +115,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const didDeleteProject = url.searchParams.get("projectDeleted") === "1";
   const didDelete = url.searchParams.get("deleted") === "1";
   const didGenerate = url.searchParams.get("generated") === "1";
+  const didRevise = url.searchParams.get("revised") === "1";
   const flash =
     url.searchParams.get("created") === "1"
       ? "Story brief created."
@@ -117,6 +123,8 @@ export async function loader({ request, context }: Route.LoaderArgs) {
         ? "Story project deleted."
       : didDelete
         ? "Draft deleted."
+      : didRevise
+        ? "Draft revised."
       : didGenerate
         ? "Draft generated."
       : url.searchParams.get("saved") === "1"
@@ -230,7 +238,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   let selectedVersionLinks: StoryEpisodeLink[] = [];
 
   if (selectedVersion) {
-    const { data: linkRows, error: linksError } = await supabase
+    const { data: linkRows, error: linksError } = await adminClient
       .from("story_episode_links")
       .select(
         "episode_id, chunk_ids, relevance_score, usage_reason, episodes!inner(episode_number, slug, title)",
@@ -289,6 +297,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
       didDeleteProject,
       didGenerate,
       didDelete,
+      didRevise,
       projects,
       retrieval,
       selectedProject,
@@ -321,6 +330,7 @@ export async function action({ request, context }: Route.ActionArgs) {
     canonMode: String(formData.get("canonMode") ?? "adjacent"),
     castPolicy: String(formData.get("castPolicy") ?? "cameo"),
     projectId: String(formData.get("projectId") ?? ""),
+    revisionInstructions: normalizeTextarea(formData.get("revisionInstructions")),
     seedPrompt: normalizeTextarea(formData.get("seedPrompt")),
     selectedFearSlugs: formData
       .getAll("selectedFearSlugs")
@@ -398,6 +408,134 @@ export async function action({ request, context }: Route.ActionArgs) {
     }
 
     return redirect(`/workspace?project=${projectRow.slug}&generated=1#latest-draft`, {
+      headers: responseHeaders,
+    });
+  }
+
+  if (intent === "revise-draft") {
+    if (!fields.projectId || !fields.versionId) {
+      return data<ActionData>(
+        {
+          error: "Missing story project or draft version.",
+          fields: {
+            projectId: fields.projectId,
+            revisionInstructions: fields.revisionInstructions,
+            versionId: fields.versionId,
+          },
+          intent: "revise-draft",
+        },
+        { headers: responseHeaders, status: 400 },
+      );
+    }
+
+    if (!fields.revisionInstructions) {
+      return data<ActionData>(
+        {
+          error: "Revision instructions are required.",
+          fields: {
+            projectId: fields.projectId,
+            revisionInstructions: fields.revisionInstructions,
+            versionId: fields.versionId,
+          },
+          intent: "revise-draft",
+        },
+        { headers: responseHeaders, status: 400 },
+      );
+    }
+
+    const { data: projectRow, error: projectError } = await supabase
+      .from("story_projects")
+      .select(
+        "id, title, slug, summary, seed_prompt, canon_mode, cast_policy, selected_fear_slugs, visibility",
+      )
+      .eq("id", fields.projectId)
+      .single();
+
+    if (projectError || !projectRow) {
+      return data<ActionData>(
+        {
+          error: `Failed to load story project: ${projectError?.message ?? "Unknown error"}`,
+          fields: {
+            projectId: fields.projectId,
+            revisionInstructions: fields.revisionInstructions,
+            versionId: fields.versionId,
+          },
+          intent: "revise-draft",
+        },
+        { headers: responseHeaders, status: 400 },
+      );
+    }
+
+    const { data: versionRow, error: versionError } = await supabase
+      .from("story_versions")
+      .select(
+        "id, version_number, model_name, content_markdown, prompt_snapshot, retrieval_snapshot, generation_metadata",
+      )
+      .eq("id", fields.versionId)
+      .eq("story_project_id", fields.projectId)
+      .single();
+
+    if (versionError || !versionRow) {
+      return data<ActionData>(
+        {
+          error: `Failed to load draft version: ${versionError?.message ?? "Unknown error"}`,
+          fields: {
+            projectId: fields.projectId,
+            revisionInstructions: fields.revisionInstructions,
+            versionId: fields.versionId,
+          },
+          intent: "revise-draft",
+        },
+        { headers: responseHeaders, status: 400 },
+      );
+    }
+
+    try {
+      await reviseStoryVersionFromProject({
+        env,
+        fears: await loadFearOptions(supabase),
+        project: {
+          id: projectRow.id,
+          title: projectRow.title,
+          slug: projectRow.slug,
+          summary: projectRow.summary,
+          seedPrompt: projectRow.seed_prompt,
+          canonMode: projectRow.canon_mode,
+          castPolicy: projectRow.cast_policy,
+          selectedFearSlugs: projectRow.selected_fear_slugs ?? [],
+          visibility: projectRow.visibility,
+        },
+        revisionInstructions: fields.revisionInstructions,
+        storyVersion: {
+          id: versionRow.id,
+          versionNumber: versionRow.version_number,
+          modelName: versionRow.model_name,
+          contentMarkdown: versionRow.content_markdown,
+          promptSnapshot: asRecord(versionRow.prompt_snapshot),
+          retrievalSnapshot: Array.isArray(versionRow.retrieval_snapshot)
+            ? versionRow.retrieval_snapshot
+            : [],
+          generationMetadata: asRecord(versionRow.generation_metadata),
+        },
+        supabase,
+        viewerUserId: viewer.user.id,
+      });
+    } catch (error) {
+      return data<ActionData>(
+        {
+          error: formatError(error),
+          fields: {
+            projectId: fields.projectId,
+            revisionInstructions: fields.revisionInstructions,
+            versionId: fields.versionId,
+          },
+          intent: "revise-draft",
+        },
+        { headers: responseHeaders, status: 400 },
+      );
+    }
+
+    return redirect(`/workspace?project=${projectRow.slug}&revised=1#latest-draft`, {
       headers: responseHeaders,
     });
   }
@@ -680,6 +818,7 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
     didDeleteProject,
     didDelete,
     didGenerate,
+    didRevise,
     projects,
     retrieval,
     selectedProject,
@@ -691,6 +830,12 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
   } = loaderData;
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
+  const activeIntent = navigation.formData ? String(navigation.formData.get("intent") ?? "") : null;
+  const isCreatingProject = isSubmitting && activeIntent === "create-project";
+  const isSavingProject = isSubmitting && activeIntent === "update-project";
+  const isGeneratingDraft = isSubmitting && activeIntent === "generate-draft";
+  const isRevisingDraft = isSubmitting && activeIntent === "revise-draft";
+  const isDeletingProject = isSubmitting && activeIntent === "delete-project";
   const createFields =
     actionData?.intent === "create-project"
       ? actionData.fields
@@ -725,6 +870,14 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
             visibility: selectedProject.visibility,
           }
         : null;
+  const revisionFields =
+    actionData?.intent === "revise-draft"
+      ? {
+          revisionInstructions: actionData.fields.revisionInstructions ?? "",
+        }
+      : {
+          revisionInstructions: "",
+        };
   const selectedVersionUsage = selectedVersion
     ? readOpenAiUsage(selectedVersion.generationMetadata)
     : {
@@ -733,6 +886,16 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
         totalTokens: null,
       };
   const selectedVersionSourceCount = selectedVersion?.retrievalSnapshot.length ?? 0;
+  const versionNumberById = new Map(
+    selectedProjectVersions.map((version) => [version.id, version.versionNumber]),
+  );
+  const selectedVersionParentNumber =
+    selectedVersion?.parentVersionId && versionNumberById.has(selectedVersion.parentVersionId)
+      ? versionNumberById.get(selectedVersion.parentVersionId) ?? null
+      : null;
+  const selectedVersionGenerationLabel = selectedVersion
+    ? readGenerationLabel(selectedVersion.generationMetadata)
+    : null;
   const historicalVersions =
     selectedVersion && selectedProjectVersions.length > 0
       ? selectedProjectVersions.slice(1)
@@ -783,7 +946,7 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
       {flash ? (
         <div className="mt-6 rounded-[1.5rem] border border-emerald-500/30 bg-emerald-500/10 px-5 py-4 text-sm text-emerald-100">
           <span>{flash}</span>
-          {didGenerate && selectedVersion ? (
+          {(didGenerate || didRevise) && selectedVersion ? (
             <a
               href="#latest-draft"
               className="ml-3 font-semibold text-emerald-50 underline underline-offset-4"
@@ -852,7 +1015,10 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
                     This draft was generated from the source packet below and saved as version{" "}
                     {selectedVersion.versionNumber}. The preview and the generator use the same
                     retrieval query and packet, and that packet is persisted on the draft as its
-                    retrieval snapshot.
+                    retrieval snapshot.{" "}
+                    {selectedVersionParentNumber
+                      ? `It is a child revision of version ${selectedVersionParentNumber}.`
+                      : "It is currently the root draft in this project chain."}
                   </p>
                 </div>
 
@@ -869,8 +1035,30 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
                     <span className="text-stone-500">Created:</span>{" "}
                     {formatDate(selectedVersion.createdAt)}
                   </p>
+                  {selectedVersionGenerationLabel ? (
+                    <p className="mt-2">
+                      <span className="text-stone-500">Mode:</span>{" "}
+                      {selectedVersionGenerationLabel}
+                    </p>
+                  ) : null}
                 </div>
               </div>
+
+              {selectedVersionParentNumber && selectedVersion.revisionNotes ? (
+                <div className="mt-6 rounded-[1.5rem] border border-stone-800 bg-stone-900/75 p-5">
+                  <p className="text-xs font-semibold uppercase tracking-[0.28em] text-amber-300">
+                    Revision brief
+                  </p>
+                  <p className="mt-3 text-sm leading-7 text-stone-300">
+                    Generated as version {selectedVersion.versionNumber} from version{" "}
+                    {selectedVersionParentNumber}. These instructions were applied to create the
+                    current draft:
+                  </p>
+                  <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-stone-100">
+                    {selectedVersion.revisionNotes}
+                  </p>
+                </div>
+              ) : null}
 
               <pre className="mt-8 max-h-[980px] overflow-auto whitespace-pre-wrap rounded-[1.6rem] border border-stone-800 bg-stone-950/90 p-6 text-[15px] leading-8 text-stone-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                 {selectedDraft.body}
@@ -891,6 +1079,14 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
                 <DraftContextStat
                   label="Linked episodes"
                   value={formatNumber(selectedVersionLinks.length)}
+                />
+                <DraftContextStat
+                  label="Lineage"
+                  value={
+                    selectedVersionParentNumber
+                      ? `v${selectedVersionParentNumber} -> v${selectedVersion.versionNumber}`
+                      : "root"
+                  }
                 />
                 <DraftContextStat
                   label="Prompt tokens"
@@ -926,6 +1122,45 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
                   Version history
                 </a>
               </div>
+
+              <article className="mt-5 rounded-[1.4rem] border border-stone-800 bg-stone-900/70 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-stone-500">
+                  Revise Draft
+                </p>
+                <p className="mt-3 text-sm leading-7 text-stone-300">
+                  Write concrete edit instructions. This creates a new immutable child version from
+                  v{selectedVersion.versionNumber} and reuses the saved source packet on this draft
+                  instead of rerunning retrieval.
+                </p>
+
+                <Form method="post" className="mt-4 space-y-4">
+                  <input type="hidden" name="intent" value="revise-draft" />
+                  <input type="hidden" name="projectId" value={selectedProject.id} />
+                  <input type="hidden" name="versionId" value={selectedVersion.id} />
+                  <label className="block">
+                    <span className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">
+                      Revision instructions
+                    </span>
+                    <textarea
+                      name="revisionInstructions"
+                      rows={6}
+                      defaultValue={revisionFields.revisionInstructions}
+                      placeholder="Make the opening quieter, remove canon character cameos, and end on a sharper Lonely turn."
+                      className="mt-2 w-full rounded-[1.2rem] border border-stone-700 bg-stone-950 px-4 py-3 text-sm leading-7 text-stone-100 outline-none transition placeholder:text-stone-500 focus:border-amber-400/60"
+                    />
+                  </label>
+
+                  <button
+                    type="submit"
+                    disabled={isRevisingDraft || isGeneratingDraft || isSavingProject || isCreatingProject}
+                    className="w-full rounded-full border border-sky-500/35 bg-sky-500/10 px-4 py-3 text-xs font-semibold uppercase tracking-[0.22em] text-sky-100 transition hover:border-sky-300/55 hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isRevisingDraft
+                      ? "Generating revision..."
+                      : `Revise from v${selectedVersion.versionNumber}`}
+                  </button>
+                </Form>
+              </article>
 
               <div className="mt-5 flex justify-end">
                 <DeleteDraftButton
@@ -1033,7 +1268,7 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
                 disabled={isSubmitting}
                 className="w-full rounded-full border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-xs font-semibold uppercase tracking-[0.22em] text-amber-100 transition hover:border-amber-300/60 hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {isSubmitting ? "Saving..." : "Create brief"}
+                {isCreatingProject ? "Saving..." : "Create brief"}
               </button>
             </Form>
           </article>
@@ -1254,7 +1489,7 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
                     disabled={isSubmitting}
                     className="rounded-full border border-amber-400/40 bg-amber-500/10 px-5 py-3 text-xs font-semibold uppercase tracking-[0.22em] text-amber-100 transition hover:border-amber-300/60 hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {isSubmitting ? "Saving..." : "Save brief"}
+                    {isSavingProject ? "Saving..." : "Save brief"}
                   </button>
                 </Form>
 
@@ -1266,13 +1501,13 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
                     disabled={isSubmitting || !buildStoryRetrievalQuery(selectedProject)}
                     className="rounded-full border border-emerald-500/35 bg-emerald-500/10 px-5 py-3 text-xs font-semibold uppercase tracking-[0.22em] text-emerald-100 transition hover:border-emerald-300/55 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {isSubmitting ? "Generating..." : "Generate draft version"}
+                    {isGeneratingDraft ? "Generating..." : "Generate draft version"}
                   </button>
                 </Form>
 
                 <div className="mt-5 flex justify-end">
                   <DeleteProjectButton
-                    isSubmitting={isSubmitting}
+                    isSubmitting={isSubmitting || isDeletingProject}
                     projectId={selectedProject.id}
                     projectTitle={selectedProject.title}
                     versionCount={selectedProject.versionCount}
@@ -1412,11 +1647,18 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
                 {historicalVersions.length > 0 ? (
                   <div className="mt-6 space-y-6">
                     <div className="grid gap-3">
-                      {historicalVersions.map((version) => (
-                        <article
-                          key={version.id}
-                          className="rounded-[1.4rem] border border-stone-800 bg-stone-900/70 p-4"
-                        >
+                      {historicalVersions.map((version) => {
+                        const parentVersionNumber =
+                          version.parentVersionId && versionNumberById.has(version.parentVersionId)
+                            ? versionNumberById.get(version.parentVersionId) ?? null
+                            : null;
+                        const generationLabel = readGenerationLabel(version.generationMetadata);
+
+                        return (
+                          <article
+                            key={version.id}
+                            className="rounded-[1.4rem] border border-stone-800 bg-stone-900/70 p-4"
+                          >
                           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                             <div>
                               <p className="text-xs uppercase tracking-[0.24em] text-stone-500">
@@ -1425,6 +1667,18 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
                               <p className="mt-2 text-sm text-stone-300">
                                 {version.modelName ?? "Model not captured yet"}
                               </p>
+                              <div className="mt-3 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.2em] text-stone-400">
+                                <span className="rounded-full border border-stone-700 px-2 py-1">
+                                  {parentVersionNumber
+                                    ? `child of v${parentVersionNumber}`
+                                    : "root version"}
+                                </span>
+                                {generationLabel ? (
+                                  <span className="rounded-full border border-stone-700 px-2 py-1">
+                                    {generationLabel}
+                                  </span>
+                                ) : null}
+                              </div>
                             </div>
                             <div className="text-sm text-stone-300">
                               <p>
@@ -1452,8 +1706,9 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
                               {version.revisionNotes}
                             </p>
                           ) : null}
-                        </article>
-                      ))}
+                          </article>
+                        );
+                      })}
                     </div>
                   </div>
                 ) : (
@@ -1770,6 +2025,20 @@ function readOpenAiUsage(metadata: Record<string, unknown>) {
     promptTokens: readOptionalNumber(usage.prompt_tokens),
     totalTokens: readOptionalNumber(usage.total_tokens),
   };
+}
+
+function readGenerationLabel(metadata: Record<string, unknown>) {
+  const mode = metadata.generation_mode;
+
+  if (mode === "revision") {
+    return "revision";
+  }
+
+  if (mode === "brief-generation") {
+    return "brief generation";
+  }
+
+  return null;
 }
 
 function readOptionalNumber(value: unknown): number | null {

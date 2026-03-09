@@ -35,7 +35,8 @@ The transcript corpus is already text-based PDF, so the ingestion path is:
 The current repository scripts cover deterministic extraction/import, episode-level metadata generation,
 and chunk embedding backfill. Chunk-level enrichment is currently a seeded first pass from episode-level
 fear tags, the internal dashboard includes a hybrid retrieval probe for validation, and the creator
-workspace can now turn story briefs into immutable draft versions with prompt and retrieval snapshots.
+workspace can now turn story briefs into immutable draft versions with prompt and retrieval snapshots,
+then create child revisions with stored revision notes and preserved provenance.
 
 ## Data Model
 
@@ -62,8 +63,9 @@ The current generation path is:
 4. Model produces a draft from the brief plus retrieved material
 5. System stores the draft as a new `story_versions` row
 6. System records episode-level provenance links and keeps the retrieval snapshot for auditability
+7. User can revise the latest draft into a new child version while keeping the prior version immutable
 
-The next extension is revision-aware generation rather than first-pass draft creation.
+The next extension is publishing and reader-facing surfaces on top of the revision-aware workspace.
 
 This is deliberately retrieval-first rather than fine-tuning-first. With the current corpus size, that is easier to debug and cheaper to run.
 
