@@ -3,6 +3,10 @@ import { data, Form, Link, redirect, useNavigation } from "react-router";
 import type { Route } from "./+types/workspace";
 import type { AppEnv } from "../lib/env.server";
 import {
+  buildPublishedStoryPath,
+  buildPublishedStoryVersionPath,
+} from "../lib/published-stories";
+import {
   generateStoryVersionFromProject,
   reviseStoryVersionFromProject,
 } from "../lib/story-generation.server";
@@ -48,6 +52,7 @@ type StoryVersionSummary = {
   parentVersionId: string | null;
   versionNumber: number;
   visibility: string;
+  publishedAt: string | null;
   createdAt: string;
   revisionNotes: string | null;
   modelName: string | null;
@@ -74,7 +79,9 @@ type ActionData = {
     | "delete-draft"
     | "delete-project"
     | "generate-draft"
+    | "publish-version"
     | "revise-draft"
+    | "unpublish-version"
     | "update-project";
   fields: {
     title?: string;
@@ -115,7 +122,9 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const didDeleteProject = url.searchParams.get("projectDeleted") === "1";
   const didDelete = url.searchParams.get("deleted") === "1";
   const didGenerate = url.searchParams.get("generated") === "1";
+  const publishedVersion = url.searchParams.get("publishedVersion");
   const didRevise = url.searchParams.get("revised") === "1";
+  const unpublishedVersion = url.searchParams.get("unpublishedVersion");
   const flash =
     url.searchParams.get("created") === "1"
       ? "Story brief created."
@@ -125,6 +134,10 @@ export async function loader({ request, context }: Route.LoaderArgs) {
         ? "Draft deleted."
       : didRevise
         ? "Draft revised."
+      : publishedVersion
+        ? `Version ${publishedVersion} published.`
+      : unpublishedVersion
+        ? `Version ${unpublishedVersion} unpublished.`
       : didGenerate
         ? "Draft generated."
       : url.searchParams.get("saved") === "1"
@@ -172,7 +185,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     const { data: versionData, error: versionsError } = await supabase
       .from("story_versions")
       .select(
-        "id, story_project_id, parent_version_id, version_number, visibility, created_at, revision_notes, model_name, content_markdown, prompt_snapshot, retrieval_snapshot, generation_metadata",
+        "id, story_project_id, parent_version_id, version_number, visibility, published_at, created_at, revision_notes, model_name, content_markdown, prompt_snapshot, retrieval_snapshot, generation_metadata",
       )
       .in("story_project_id", projectIds)
       .order("created_at", { ascending: false });
@@ -190,6 +203,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
       parentVersionId: row.parent_version_id,
       versionNumber: row.version_number,
       visibility: row.visibility,
+      publishedAt: row.published_at,
       createdAt: row.created_at,
       revisionNotes: row.revision_notes,
       modelName: row.model_name,
@@ -235,6 +249,8 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     ? versionsByProject.get(selectedProject.id) ?? []
     : [];
   const selectedVersion = selectedProjectVersions[0] ?? null;
+  const selectedPublishedVersion =
+    selectedProjectVersions.find((version) => version.publishedAt !== null) ?? null;
   let selectedVersionLinks: StoryEpisodeLink[] = [];
 
   if (selectedVersion) {
@@ -301,6 +317,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
       projects,
       retrieval,
       selectedProject,
+      selectedPublishedVersion,
       selectedVersion,
       selectedVersionLinks,
       selectedProjectVersions,
@@ -540,6 +557,198 @@ export async function action({ request, context }: Route.ActionArgs) {
     });
   }
 
+  if (intent === "publish-version" || intent === "unpublish-version") {
+    if (!fields.projectId || !fields.versionId) {
+      return data<ActionData>(
+        {
+          error: "Missing story project or draft version.",
+          fields: {
+            projectId: fields.projectId,
+            versionId: fields.versionId,
+          },
+          intent,
+        },
+        { headers: responseHeaders, status: 400 },
+      );
+    }
+
+    const { data: projectRow, error: projectError } = await supabase
+      .from("story_projects")
+      .select("id, slug, visibility")
+      .eq("id", fields.projectId)
+      .single();
+
+    if (projectError || !projectRow) {
+      return data<ActionData>(
+        {
+          error: `Failed to load story project: ${projectError?.message ?? "Unknown error"}`,
+          fields: {
+            projectId: fields.projectId,
+            versionId: fields.versionId,
+          },
+          intent,
+        },
+        { headers: responseHeaders, status: 400 },
+      );
+    }
+
+    const { data: versionRow, error: versionError } = await supabase
+      .from("story_versions")
+      .select("id, version_number, published_at")
+      .eq("id", fields.versionId)
+      .eq("story_project_id", fields.projectId)
+      .single();
+
+    if (versionError || !versionRow) {
+      return data<ActionData>(
+        {
+          error: `Failed to load story version: ${versionError?.message ?? "Unknown error"}`,
+          fields: {
+            projectId: fields.projectId,
+            versionId: fields.versionId,
+          },
+          intent,
+        },
+        { headers: responseHeaders, status: 400 },
+      );
+    }
+
+    if (intent === "publish-version" && projectRow.visibility !== "public") {
+      return data<ActionData>(
+        {
+          error: "Set the project visibility to public and save before publishing a story version.",
+          fields: {
+            projectId: fields.projectId,
+            versionId: fields.versionId,
+          },
+          intent,
+        },
+        { headers: responseHeaders, status: 400 },
+      );
+    }
+
+    const publishedAt = new Date().toISOString();
+
+    if (intent === "publish-version") {
+      const { error: clearPublishedError } = await supabase
+        .from("story_versions")
+        .update({ published_at: null })
+        .eq("story_project_id", fields.projectId)
+        .neq("id", fields.versionId);
+
+      if (clearPublishedError) {
+        return data<ActionData>(
+          {
+            error: `Failed to clear previous published version: ${clearPublishedError.message}`,
+            fields: {
+              projectId: fields.projectId,
+              versionId: fields.versionId,
+            },
+            intent,
+          },
+          { headers: responseHeaders, status: 400 },
+        );
+      }
+
+      const { error: publishVersionError } = await supabase
+        .from("story_versions")
+        .update({
+          published_at: publishedAt,
+          visibility: "public",
+        })
+        .eq("id", fields.versionId);
+
+      if (publishVersionError) {
+        return data<ActionData>(
+          {
+            error: `Failed to publish story version: ${publishVersionError.message}`,
+            fields: {
+              projectId: fields.projectId,
+              versionId: fields.versionId,
+            },
+            intent,
+          },
+          { headers: responseHeaders, status: 400 },
+        );
+      }
+
+      const { error: publishProjectError } = await supabase
+        .from("story_projects")
+        .update({
+          published_at: publishedAt,
+          status: "published",
+        })
+        .eq("id", fields.projectId);
+
+      if (publishProjectError) {
+        return data<ActionData>(
+          {
+            error: `Failed to publish story project: ${publishProjectError.message}`,
+            fields: {
+              projectId: fields.projectId,
+              versionId: fields.versionId,
+            },
+            intent,
+          },
+          { headers: responseHeaders, status: 400 },
+        );
+      }
+
+      return redirect(
+        `/workspace?project=${projectRow.slug}&publishedVersion=${versionRow.version_number}#version-history`,
+        { headers: responseHeaders },
+      );
+    }
+
+    const { error: unpublishVersionError } = await supabase
+      .from("story_versions")
+      .update({
+        published_at: null,
+      })
+      .eq("id", fields.versionId);
+
+    if (unpublishVersionError) {
+      return data<ActionData>(
+        {
+          error: `Failed to unpublish story version: ${unpublishVersionError.message}`,
+          fields: {
+            projectId: fields.projectId,
+            versionId: fields.versionId,
+          },
+          intent,
+        },
+        { headers: responseHeaders, status: 400 },
+      );
+    }
+
+    const { error: unpublishProjectError } = await supabase
+      .from("story_projects")
+      .update({
+        published_at: null,
+        status: "draft",
+      })
+      .eq("id", fields.projectId);
+
+    if (unpublishProjectError) {
+      return data<ActionData>(
+        {
+          error: `Failed to update project publication state: ${unpublishProjectError.message}`,
+          fields: {
+            projectId: fields.projectId,
+            versionId: fields.versionId,
+          },
+          intent,
+        },
+        { headers: responseHeaders, status: 400 },
+      );
+    }
+
+    return redirect(
+      `/workspace?project=${projectRow.slug}&unpublishedVersion=${versionRow.version_number}#version-history`,
+      { headers: responseHeaders },
+    );
+  }
+
   if (intent === "delete-draft") {
     if (!fields.projectId || !fields.versionId) {
       return data<ActionData>(
@@ -557,7 +766,7 @@ export async function action({ request, context }: Route.ActionArgs) {
 
     const { data: versionRow, error: versionError } = await supabase
       .from("story_versions")
-      .select("id, story_project_id, story_projects!inner(slug)")
+      .select("id, story_project_id, published_at, story_projects!inner(slug)")
       .eq("id", fields.versionId)
       .eq("story_project_id", fields.projectId)
       .single();
@@ -599,6 +808,30 @@ export async function action({ request, context }: Route.ActionArgs) {
       ? versionRow.story_projects[0]
       : versionRow.story_projects;
     const projectSlug = project?.slug;
+
+    if (versionRow.published_at) {
+      const { error: resetProjectPublicationError } = await supabase
+        .from("story_projects")
+        .update({
+          published_at: null,
+          status: "draft",
+        })
+        .eq("id", fields.projectId);
+
+      if (resetProjectPublicationError) {
+        return data<ActionData>(
+          {
+            error: `Draft deleted, but failed to update project publication state: ${resetProjectPublicationError.message}`,
+            fields: {
+              projectId: fields.projectId,
+              versionId: fields.versionId,
+            },
+            intent: "delete-draft",
+          },
+          { headers: responseHeaders, status: 400 },
+        );
+      }
+    }
 
     if (!projectSlug) {
       return redirect("/workspace?deleted=1#story-versions", {
@@ -822,6 +1055,7 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
     projects,
     retrieval,
     selectedProject,
+    selectedPublishedVersion,
     selectedProjectVersions,
     selectedVersion,
     selectedVersionLinks,
@@ -834,8 +1068,10 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
   const isCreatingProject = isSubmitting && activeIntent === "create-project";
   const isSavingProject = isSubmitting && activeIntent === "update-project";
   const isGeneratingDraft = isSubmitting && activeIntent === "generate-draft";
+  const isPublishingVersion = isSubmitting && activeIntent === "publish-version";
   const isRevisingDraft = isSubmitting && activeIntent === "revise-draft";
   const isDeletingProject = isSubmitting && activeIntent === "delete-project";
+  const isUnpublishingVersion = isSubmitting && activeIntent === "unpublish-version";
   const createFields =
     actionData?.intent === "create-project"
       ? actionData.fields
@@ -896,11 +1132,27 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
   const selectedVersionGenerationLabel = selectedVersion
     ? readGenerationLabel(selectedVersion.generationMetadata)
     : null;
+  const selectedVersionIsPublished =
+    selectedVersion !== null && selectedPublishedVersion?.id === selectedVersion.id;
+  const currentPublicStoryPath =
+    selectedProject && selectedPublishedVersion
+      ? buildPublishedStoryPath(selectedProject.slug)
+      : null;
+  const currentPublicVersionPath =
+    selectedProject && selectedPublishedVersion
+      ? buildPublishedStoryVersionPath(selectedProject.slug, selectedPublishedVersion.versionNumber)
+      : null;
+  const versionPublicationReady = selectedProject?.visibility === "public";
   const historicalVersions =
     selectedVersion && selectedProjectVersions.length > 0
       ? selectedProjectVersions.slice(1)
       : selectedProjectVersions;
   const selectedDraft = selectedVersion ? splitDraftMarkdown(selectedVersion.contentMarkdown) : null;
+  const selectedProjectIsPublished = selectedProject?.publishedAt !== null && selectedProject !== null;
+  const activeDraftIsPublicVersion =
+    selectedVersion !== null &&
+    selectedPublishedVersion !== null &&
+    selectedVersion.id === selectedPublishedVersion.id;
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-[1480px] px-6 py-10 lg:px-10">
@@ -1020,6 +1272,24 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
                       ? `It is a child revision of version ${selectedVersionParentNumber}.`
                       : "It is currently the root draft in this project chain."}
                   </p>
+                  <div className="mt-4 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.22em]">
+                    <span className="rounded-full border border-stone-700 px-3 py-1 text-stone-300">
+                      workspace latest
+                    </span>
+                    {selectedVersionIsPublished ? (
+                      <span className="rounded-full border border-emerald-500/35 bg-emerald-500/10 px-3 py-1 text-emerald-100">
+                        live public version
+                      </span>
+                    ) : selectedPublishedVersion ? (
+                      <span className="rounded-full border border-amber-500/35 bg-amber-500/10 px-3 py-1 text-amber-100">
+                        public route still serves v{selectedPublishedVersion.versionNumber}
+                      </span>
+                    ) : (
+                      <span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-3 py-1 text-sky-100">
+                        not published yet
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 <div className="rounded-[1.5rem] border border-stone-800 bg-stone-900/80 p-4 text-sm text-stone-300">
@@ -1101,6 +1371,61 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
                   value={formatMetricNumber(selectedVersionUsage.totalTokens)}
                 />
               </div>
+
+              <article className="mt-5 rounded-[1.4rem] border border-stone-800 bg-stone-900/70 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-stone-500">
+                  Publication
+                </p>
+                <p className="mt-3 text-sm leading-7 text-stone-300">
+                  {selectedVersionIsPublished
+                    ? `Version ${selectedVersion.versionNumber} is the live public story.`
+                    : selectedPublishedVersion
+                      ? `Version ${selectedPublishedVersion.versionNumber} is currently public. Publish this draft when you want the archive feed and canonical reader URL to switch.`
+                      : "No version is public yet. Publishing creates the public archive entry and stable reader routes."}
+                </p>
+
+                {currentPublicStoryPath && currentPublicVersionPath ? (
+                  <div className="mt-4 grid gap-3">
+                    <Link
+                      to={currentPublicStoryPath}
+                      className="rounded-[1.2rem] border border-emerald-500/35 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100 transition hover:border-emerald-300/55 hover:bg-emerald-500/20"
+                    >
+                      Open canonical public story
+                    </Link>
+                    <Link
+                      to={currentPublicVersionPath}
+                      className="rounded-[1.2rem] border border-stone-800 bg-stone-950/80 px-4 py-3 text-sm text-stone-200 transition hover:border-stone-600"
+                    >
+                      Open version route
+                    </Link>
+                  </div>
+                ) : null}
+
+                <div className="mt-4 flex flex-wrap gap-3">
+                  {selectedVersionIsPublished ? (
+                    <UnpublishVersionButton
+                      isSubmitting={isSubmitting}
+                      isUnpublishing={isUnpublishingVersion}
+                      projectId={selectedProject.id}
+                      versionId={selectedVersion.id}
+                      versionNumber={selectedVersion.versionNumber}
+                    />
+                  ) : (
+                    <PublishVersionButton
+                      disabledReason={
+                        versionPublicationReady
+                          ? null
+                          : "Set project visibility to public and save before publishing."
+                      }
+                      isSubmitting={isSubmitting}
+                      isPublishing={isPublishingVersion}
+                      projectId={selectedProject.id}
+                      versionId={selectedVersion.id}
+                      versionNumber={selectedVersion.versionNumber}
+                    />
+                  )}
+                </div>
+              </article>
 
               <div className="mt-5 grid gap-3">
                 <a
@@ -1321,6 +1646,11 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
                         <span className="rounded-full bg-stone-800 px-2 py-1">
                           {project.visibility}
                         </span>
+                        {project.publishedAt ? (
+                          <span className="rounded-full bg-emerald-500/15 px-2 py-1 text-emerald-100">
+                            published
+                          </span>
+                        ) : null}
                         <span className="rounded-full bg-stone-800 px-2 py-1">
                           {project.versionCount} versions
                         </span>
@@ -1367,6 +1697,19 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
                       become the starting brief, and the retrieval preview lets you tune the
                       constraints before generating a new immutable version.
                     </p>
+                    <div className="mt-4 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.22em]">
+                      <span className="rounded-full border border-stone-700 px-3 py-1 text-stone-300">
+                        {selectedProject.visibility}
+                      </span>
+                      <span className="rounded-full border border-stone-700 px-3 py-1 text-stone-300">
+                        {selectedProject.status}
+                      </span>
+                      {selectedProjectIsPublished ? (
+                        <span className="rounded-full border border-emerald-500/35 bg-emerald-500/10 px-3 py-1 text-emerald-100">
+                          public story live
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
 
                   <div className="rounded-[1.5rem] border border-stone-800 bg-stone-900/75 p-4 text-sm text-stone-300">
@@ -1381,8 +1724,45 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
                       <span className="text-stone-500">Versions:</span>{" "}
                       {formatNumber(selectedProject.versionCount)}
                     </p>
+                    {selectedProject.publishedAt ? (
+                      <p className="mt-2">
+                        <span className="text-stone-500">Published:</span>{" "}
+                        {formatDate(selectedProject.publishedAt)}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
+
+                {selectedPublishedVersion ? (
+                  <div className="mt-6 rounded-[1.5rem] border border-emerald-500/25 bg-emerald-500/10 p-5 text-sm text-emerald-50/90">
+                    <p className="text-xs font-semibold uppercase tracking-[0.28em] text-emerald-200">
+                      Public story routing
+                    </p>
+                    <p className="mt-3 leading-7">
+                      The archive feed and canonical story route currently point at version{" "}
+                      {selectedPublishedVersion.versionNumber}. Publishing a different version will
+                      move the canonical route while keeping version-specific links stable.
+                    </p>
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      {currentPublicStoryPath ? (
+                        <Link
+                          to={currentPublicStoryPath}
+                          className="rounded-full border border-emerald-300/35 bg-emerald-500/15 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-emerald-50 transition hover:border-emerald-200/55 hover:bg-emerald-500/25"
+                        >
+                          Open canonical route
+                        </Link>
+                      ) : null}
+                      {currentPublicVersionPath ? (
+                        <Link
+                          to={currentPublicVersionPath}
+                          className="rounded-full border border-stone-700 bg-stone-950/70 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-stone-100 transition hover:border-stone-500"
+                        >
+                          Open public version route
+                        </Link>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
 
                 <Form method="post" className="mt-8 space-y-6">
                   <input type="hidden" name="intent" value="update-project" />
@@ -1667,12 +2047,17 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
                               <p className="mt-2 text-sm text-stone-300">
                                 {version.modelName ?? "Model not captured yet"}
                               </p>
-                              <div className="mt-3 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.2em] text-stone-400">
+                          <div className="mt-3 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.2em] text-stone-400">
                                 <span className="rounded-full border border-stone-700 px-2 py-1">
                                   {parentVersionNumber
                                     ? `child of v${parentVersionNumber}`
                                     : "root version"}
                                 </span>
+                                {version.publishedAt ? (
+                                  <span className="rounded-full border border-emerald-500/35 bg-emerald-500/10 px-2 py-1 text-emerald-100">
+                                    live public version
+                                  </span>
+                                ) : null}
                                 {generationLabel ? (
                                   <span className="rounded-full border border-stone-700 px-2 py-1">
                                     {generationLabel}
@@ -1689,10 +2074,48 @@ export default function Workspace({ actionData, loaderData }: Route.ComponentPro
                                 <span className="text-stone-500">Created:</span>{" "}
                                 {formatDate(version.createdAt)}
                               </p>
+                              {version.publishedAt ? (
+                                <p className="mt-2">
+                                  <span className="text-stone-500">Published:</span>{" "}
+                                  {formatDate(version.publishedAt)}
+                                </p>
+                              ) : null}
                             </div>
                           </div>
 
-                          <div className="mt-4 flex justify-end">
+                          <div className="mt-4 flex flex-wrap justify-end gap-3">
+                            {version.publishedAt ? (
+                              <>
+                                {selectedProject ? (
+                                  <Link
+                                    to={buildPublishedStoryPath(selectedProject.slug)}
+                                    className="rounded-full border border-emerald-500/35 bg-emerald-500/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-emerald-100 transition hover:border-emerald-300/55 hover:bg-emerald-500/20"
+                                  >
+                                    Open story
+                                  </Link>
+                                ) : null}
+                                <UnpublishVersionButton
+                                  isSubmitting={isSubmitting}
+                                  isUnpublishing={isUnpublishingVersion}
+                                  projectId={selectedProject.id}
+                                  versionId={version.id}
+                                  versionNumber={version.versionNumber}
+                                />
+                              </>
+                            ) : (
+                              <PublishVersionButton
+                                disabledReason={
+                                  versionPublicationReady
+                                    ? null
+                                    : "Set project visibility to public and save before publishing."
+                                }
+                                isSubmitting={isSubmitting}
+                                isPublishing={isPublishingVersion}
+                                projectId={selectedProject.id}
+                                versionId={version.id}
+                                versionNumber={version.versionNumber}
+                              />
+                            )}
                             <DeleteDraftButton
                               isSubmitting={isSubmitting}
                               projectId={selectedProject.id}
@@ -1786,6 +2209,77 @@ function DraftContextStat({ label, value }: { label: string; value: string }) {
       <p className="text-[11px] uppercase tracking-[0.24em] text-stone-500">{label}</p>
       <p className="mt-3 font-display text-3xl text-stone-50">{value}</p>
     </article>
+  );
+}
+
+function PublishVersionButton({
+  disabledReason,
+  isPublishing,
+  isSubmitting,
+  projectId,
+  versionId,
+  versionNumber,
+}: {
+  disabledReason: string | null;
+  isPublishing: boolean;
+  isSubmitting: boolean;
+  projectId: string;
+  versionId: string;
+  versionNumber: number;
+}) {
+  const disabled = isSubmitting || disabledReason !== null;
+
+  return (
+    <Form method="post" title={disabledReason ?? undefined}>
+      <input type="hidden" name="intent" value="publish-version" />
+      <input type="hidden" name="projectId" value={projectId} />
+      <input type="hidden" name="versionId" value={versionId} />
+      <button
+        type="submit"
+        disabled={disabled}
+        className="rounded-full border border-emerald-500/35 bg-emerald-500/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-emerald-100 transition hover:border-emerald-300/55 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {isPublishing ? `Publishing v${versionNumber}...` : `Publish v${versionNumber}`}
+      </button>
+    </Form>
+  );
+}
+
+function UnpublishVersionButton({
+  isUnpublishing,
+  isSubmitting,
+  projectId,
+  versionId,
+  versionNumber,
+}: {
+  isUnpublishing: boolean;
+  isSubmitting: boolean;
+  projectId: string;
+  versionId: string;
+  versionNumber: number;
+}) {
+  return (
+    <Form method="post">
+      <input type="hidden" name="intent" value="unpublish-version" />
+      <input type="hidden" name="projectId" value={projectId} />
+      <input type="hidden" name="versionId" value={versionId} />
+      <button
+        type="submit"
+        disabled={isSubmitting}
+        onClick={(event) => {
+          if (
+            !window.confirm(
+              `Unpublish version ${versionNumber}? It will disappear from the public archive and story routes until another version is published.`,
+            )
+          ) {
+            event.preventDefault();
+          }
+        }}
+        className="rounded-full border border-stone-700 bg-stone-900/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-stone-100 transition hover:border-stone-500 hover:bg-stone-900 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {isUnpublishing ? `Unpublishing v${versionNumber}...` : "Unpublish"}
+      </button>
+    </Form>
   );
 }
 

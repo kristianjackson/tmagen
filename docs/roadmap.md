@@ -12,10 +12,11 @@ The current system has these foundations in place:
 - working auth and creator workspace
 - first-pass draft generation with prompt and retrieval snapshots
 - revision-aware child versions with stored revision notes and feedback
+- published story routes and archive feed driven by explicit version publication
 - draft deletion and project deletion
 - provenance links from generated drafts back to source episodes
 
-The main gap is no longer infrastructure. The main gap is product loop depth: publishing, public reading surfaces, and quality control.
+The main gap is no longer infrastructure. The main gap is product loop discipline: quality control, richer editorial tooling, and production polish.
 
 ## Recently Completed
 
@@ -29,59 +30,44 @@ Completed outcomes:
 - applied revision feedback stored in `story_feedback`
 - live workspace lineage, revision brief display, and preserved provenance links
 
+### Publishing And Reader Surfaces
+
+Completed outcomes:
+
+- dedicated public story routes for canonical and version-specific reading
+- publish and unpublish controls in the workspace
+- public archive feed populated from published versions only
+- stable reader URLs with canonical version switching
+- live smoke-tested publish and unpublish flow against the deployed Worker
+
 ## Active Plan
 
-### 1. Publishing And Reader Surfaces
-
-Turn private drafts into publishable stories and expose a proper reading experience.
-
-Target outcomes:
-
-- add a dedicated reader route for a single story version
-- add publish and unpublish controls
-- create stable public story URLs
-- build the public archive feed from published versions only
-- separate creator editing views from reader-facing presentation
-
-Why this is first:
-
-- revision needs a destination
-- the current workspace is a creation surface, not a reader surface
-- the public archive is part of the original product promise
-
-Implementation notes:
-
-- publish explicit versions, not mutable projects
-- keep unpublished versions private by default
-- store published timestamps on the version actually exposed to readers
-- avoid leaking transcript-only or internal provenance data into the public UI
-
-### 2. Evaluation, Testing, And Retrieval Hardening
+### 1. Evaluation, Testing, And Retrieval Hardening
 
 Add operational discipline around retrieval quality and story generation quality.
 
 Target outcomes:
 
 - define a small set of canonical story briefs for evaluation
-- add smoke tests for auth, workspace, generation, deletion, and publishing
+- add smoke tests for auth, workspace, generation, revision, deletion, and publishing
 - validate retrieval quality against expected source material
 - improve provenance display from episode-level links to clearer chunk-level evidence
 - tighten failure handling around model output quality and retry policy
 
 Why this is second:
 
-- the system now works, but quality will drift unless measured
+- the system now works across the full loop, but quality will drift unless measured
 - retrieval-first systems are only trustworthy if the seams are testable
 - this reduces regressions as the creator workflow gets more complex
 
 Implementation notes:
 
 - test the boundaries: auth cookies, RLS, version creation, and destructive actions
-- keep a human-reviewed benchmark set for retrieval quality
+- keep a human-reviewed benchmark set for retrieval quality and published-story quality
 - prefer structured generation metadata over ad hoc logs
 - surface model usage and retrieval packet size in the UI for easier debugging
 
-### 3. Richer Editorial Controls And Provenance
+### 2. Richer Editorial Controls And Provenance
 
 Deepen the creator loop now that revision exists.
 
@@ -94,7 +80,7 @@ Target outcomes:
 
 Why this is third:
 
-- the basic revision loop works, but it is still coarse
+- the basic revision and publishing loops work, but they are still coarse
 - provenance can be more transparent than a flat episode list
 - editorial tools matter more once publishable versions exist
 
@@ -104,6 +90,30 @@ Implementation notes:
 - never lose the original retrieval snapshot when creating derived versions
 - prefer additive editorial tools over mutable in-place editing
 - keep provenance readable enough for creators without exposing internal-only detail in public views
+
+### 3. Production Polish And Rollout Discipline
+
+Bring the now-working product loop closer to a dependable public deployment.
+
+Target outcomes:
+
+- connect a custom domain for the public archive
+- add lightweight production monitoring and route health checks
+- define a manual release checklist for auth, workspace, publish, and public reading flows
+- tighten role boundaries for the transcript dashboard and other internal surfaces
+
+Why this is third:
+
+- the product loop is now visible to readers, so reliability matters more
+- a custom domain and smoke monitoring are higher leverage now that publishing exists
+- internal/operator surfaces should not stay loosely protected forever
+
+Implementation notes:
+
+- keep the release checklist small enough to run before every deploy
+- verify both anonymous and authenticated flows against production
+- separate reader-safe telemetry from internal debugging data
+- prefer explicit admin/operator controls over broad authenticated access
 
 ## Later Backlog
 

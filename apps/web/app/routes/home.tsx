@@ -1,40 +1,21 @@
+import { data, Link, useRouteLoaderData } from "react-router";
+
 import type { Route } from "./+types/home";
-import { Link, useRouteLoaderData } from "react-router";
-
+import type { AppEnv } from "../lib/env.server";
+import {
+  listPublishedStorySummaries,
+} from "../lib/published-stories.server";
+import {
+  buildPublishedStoryPath,
+  buildPublishedStoryVersionPath,
+} from "../lib/published-stories";
+import { createSupabaseAdminClient } from "../lib/supabase/admin.server";
 import type { loader as rootLoader } from "../root";
-
-const publicStories = [
-  {
-    title: "A Statement on the Shape of Empty Rooms",
-    tag: "The Lonely",
-    summary:
-      "A low-burn archive entry that starts as housing anxiety and ends in a room that edits people out of memory.",
-  },
-  {
-    title: "Interdepartmental Notes Regarding Stairwell C",
-    tag: "The Spiral",
-    summary:
-      "A canon-adjacent office horror thread told through memos, taped addenda, and one witness who keeps changing names.",
-  },
-  {
-    title: "The Last Passenger on the District Line",
-    tag: "The End",
-    summary:
-      "A public archive draft that mixes commuter dread, inevitability, and a narrator who already knows where the train stops.",
-  },
-];
 
 const productPillars = [
   "Transcript-grounded generation instead of blind prompting",
   "Immutable story versions with provenance back to source episodes",
   "A public archive feed plus a private creator workspace",
-];
-
-const buildStatus = [
-  { label: "Source corpus", value: "200 PDFs ready" },
-  { label: "Corpus size", value: "~728k words sampled" },
-  { label: "Hosting", value: "Cloudflare Workers" },
-  { label: "Backend", value: "Supabase + pgvector" },
 ];
 
 const workflow = [
@@ -50,10 +31,24 @@ const workflow = [
   },
   {
     step: "03",
-    title: "Generate with provenance",
-    body: "Every story version stores the prompt snapshot, the retrieved episode material, and the exact draft output.",
+    title: "Publish intentionally",
+    body: "Drafts stay private until a specific version is published, then the archive gets a stable reader route and current public link.",
   },
 ];
+
+export async function loader({ context }: Route.LoaderArgs) {
+  const env = context.cloudflare.env as AppEnv;
+  const adminClient = createSupabaseAdminClient(env);
+  const publishedStories = await listPublishedStorySummaries(adminClient, 6);
+
+  return data({
+    publishedStories,
+    summary: {
+      publishedCount: publishedStories.length,
+      publicRoutesReady: "project + version URLs",
+    },
+  });
+}
 
 export function meta({}: Route.MetaArgs) {
   return [
@@ -66,9 +61,15 @@ export function meta({}: Route.MetaArgs) {
   ];
 }
 
-export default function Home() {
+export default function Home({ loaderData }: Route.ComponentProps) {
   const rootData = useRouteLoaderData<typeof rootLoader>("root");
   const viewer = rootData?.viewer;
+  const buildStatus = [
+    { label: "Source corpus", value: "200 episodes ready" },
+    { label: "Published stories", value: String(loaderData.summary.publishedCount) },
+    { label: "Hosting", value: "Cloudflare Workers" },
+    { label: "Public routes", value: loaderData.summary.publicRoutesReady },
+  ];
 
   return (
     <main className="relative overflow-hidden">
@@ -90,8 +91,8 @@ export default function Home() {
             >
               {viewer ? "Open Workspace" : "Sign In"}
             </Link>
-            <div className="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">
-              Workflow pass
+            <div className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-emerald-200">
+              Publishing live
             </div>
           </div>
         </header>
@@ -102,12 +103,12 @@ export default function Home() {
               Archive-born drafting
             </p>
             <h1 className="mt-5 max-w-4xl font-display text-5xl leading-[1.02] text-stone-50 sm:text-6xl lg:text-7xl">
-              Build fan fiction from a curated horror archive, not from vibes.
+              Build fan fiction from a curated horror archive, then publish the exact version that earns it.
             </h1>
             <p className="mt-6 max-w-2xl text-base leading-8 text-stone-300 sm:text-lg">
-              TMAGen is being built as a multiuser writing platform where transcript-grounded retrieval,
-              explicit fear selection, canon controls, and versioned rewrites are part of the product
-              model rather than bolted on after the fact.
+              TMAGen is a multiuser writing platform where transcript-grounded retrieval, explicit fear
+              selection, canon controls, revision history, and public story publication are part of the
+              product model rather than bolted on afterward.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link
@@ -157,8 +158,8 @@ export default function Home() {
                 Immediate goal
               </p>
               <p className="mt-3 text-sm leading-7 text-amber-50/90">
-                Tighten creator-side draft generation and revision flow so each story keeps a durable
-                prompt snapshot, retrieval packet, and provenance trail.
+                Move from revision into strong public reading surfaces: publish exact versions, keep
+                reader URLs stable, and separate creator controls from public presentation.
               </p>
             </div>
           </aside>
@@ -169,33 +170,78 @@ export default function Home() {
             <div className="flex items-center justify-between gap-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.32em] text-stone-400">
-                  Public archive preview
+                  Public archive feed
                 </p>
                 <h2 className="mt-3 font-display text-3xl text-stone-50">
-                  The anonymous landing experience should feel like a curated feed, not a blank prompt box.
+                  Published stories now come from the real archive, not placeholder cards.
                 </h2>
               </div>
               <span className="hidden rounded-full border border-stone-700 px-3 py-1 text-xs uppercase tracking-[0.22em] text-stone-300 md:inline-flex">
-                Browse first
+                Read first
               </span>
             </div>
 
-            <div className="mt-8 grid gap-4">
-              {publicStories.map((story) => (
-                <article
-                  key={story.title}
-                  className="rounded-[1.6rem] border border-stone-800 bg-[linear-gradient(145deg,rgba(32,23,20,0.95),rgba(17,17,17,0.92))] p-5"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <h3 className="font-display text-2xl text-stone-50">{story.title}</h3>
-                    <span className="rounded-full bg-stone-800 px-3 py-1 text-xs uppercase tracking-[0.22em] text-amber-200">
-                      {story.tag}
-                    </span>
-                  </div>
-                  <p className="mt-4 max-w-2xl text-sm leading-7 text-stone-300">{story.summary}</p>
-                </article>
-              ))}
-            </div>
+            {loaderData.publishedStories.length > 0 ? (
+              <div className="mt-8 grid gap-4">
+                {loaderData.publishedStories.map((story) => (
+                  <article
+                    key={`${story.projectSlug}-${story.versionNumber}`}
+                    className="rounded-[1.6rem] border border-stone-800 bg-[linear-gradient(145deg,rgba(32,23,20,0.95),rgba(17,17,17,0.92))] p-5"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div>
+                        <div className="flex flex-wrap gap-2">
+                          {story.selectedFearSlugs.map((fearSlug) => (
+                            <span
+                              key={fearSlug}
+                              className="rounded-full bg-stone-800 px-3 py-1 text-xs uppercase tracking-[0.22em] text-amber-200"
+                            >
+                              {fearSlug}
+                            </span>
+                          ))}
+                        </div>
+                        <h3 className="mt-4 font-display text-2xl text-stone-50">{story.title}</h3>
+                      </div>
+
+                      <div className="text-right text-xs uppercase tracking-[0.22em] text-stone-400">
+                        <p>Published {formatDate(story.publishedAt)}</p>
+                        <p className="mt-2">v{story.versionNumber}</p>
+                      </div>
+                    </div>
+
+                    <p className="mt-4 max-w-2xl text-sm leading-7 text-stone-300">
+                      {story.excerpt}
+                    </p>
+
+                    <div className="mt-5 flex flex-wrap gap-3">
+                      <Link
+                        to={buildPublishedStoryPath(story.projectSlug)}
+                        className="rounded-full border border-amber-400/40 bg-amber-500/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-amber-100 transition hover:border-amber-300/60 hover:bg-amber-500/20"
+                      >
+                        Read story
+                      </Link>
+                      <Link
+                        to={buildPublishedStoryVersionPath(story.projectSlug, story.versionNumber)}
+                        className="rounded-full border border-stone-700 bg-stone-950/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-stone-100 transition hover:border-stone-500 hover:bg-stone-900"
+                      >
+                        Version route
+                      </Link>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-8 rounded-[1.6rem] border border-dashed border-stone-700 bg-stone-900/40 p-6">
+                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-stone-500">
+                  Empty archive
+                </p>
+                <p className="mt-4 max-w-2xl text-sm leading-7 text-stone-300">
+                  No story versions have been published yet. The workspace can now publish exact draft
+                  versions, so the next public story will appear here automatically once a creator
+                  decides a draft is ready for readers.
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="space-y-4">
@@ -216,4 +262,10 @@ export default function Home() {
       </div>
     </main>
   );
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+  }).format(new Date(value));
 }

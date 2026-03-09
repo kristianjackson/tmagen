@@ -64,8 +64,9 @@ The current generation path is:
 5. System stores the draft as a new `story_versions` row
 6. System records episode-level provenance links and keeps the retrieval snapshot for auditability
 7. User can revise the latest draft into a new child version while keeping the prior version immutable
+8. User can publish a specific version, which drives the public archive feed and reader routes
 
-The next extension is publishing and reader-facing surfaces on top of the revision-aware workspace.
+The next extension is evaluation, testing, and retrieval hardening on top of the now-complete publishable workflow.
 
 This is deliberately retrieval-first rather than fine-tuning-first. With the current corpus size, that is easier to debug and cheaper to run.
 
