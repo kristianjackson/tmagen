@@ -13,6 +13,7 @@
     "generate:embeddings": "node scripts/generate-chunk-embeddings.mjs --env-file ./apps/web/.dev.vars",
     "generate:metadata": "node scripts/generate-episode-metadata.mjs --env-file ./apps/web/.dev.vars",
     "import:transcripts": "node scripts/import-transcripts.mjs --input ./data/processed/episodes --env-file ./apps/web/.dev.vars",
+    "smoke:web": "node scripts/smoke-web-flow.mjs",
     "typecheck": "npm --prefix apps/web run typecheck"
   }
 }

@@ -352,6 +352,14 @@ If a client prompts for OAuth when you first use a server, complete that in the 
 Once the steps above are complete, the next implementation target should be:
 
 1. broader retrieval-quality validation against real briefs
-2. route-level smoke tests and regression checks around auth, workspace, and publishing flows
-3. richer provenance presentation from generated drafts back to chunk retrieval hits
-4. production rollout polish such as a custom domain and basic monitoring
+2. richer provenance presentation from generated drafts back to chunk retrieval hits
+3. production rollout polish such as a custom domain and basic monitoring
+4. CI or preview-environment automation around the smoke flow below
+
+There is now an automated deploy smoke script for the core product loop:
+
+```bash
+npm run smoke:web -- --base-url https://tmagen-web.kristian-jackson.workers.dev
+```
+
+See [docs/release-checklist.md](./release-checklist.md) for the full release sequence.

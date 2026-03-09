@@ -9,8 +9,10 @@ TMAGen is a Cloudflare-hosted, Supabase-backed fan-fiction platform inspired by 
 - `scripts/extract-transcripts.mjs` converts the local transcript PDFs into cleaned JSON files that are ready for metadata generation and embedding.
 - `scripts/generate-episode-metadata.mjs` fills episode summaries, hooks, fear tags, and retrieval metadata after transcript import.
 - `scripts/generate-chunk-embeddings.mjs` backfills `episode_chunks.embedding` and seeds chunk fear tags for retrieval.
+- `scripts/smoke-web-flow.mjs` runs the end-to-end auth, workspace, revision, publish, and cleanup smoke flow against a deployed app.
 - `docs/setup.md` contains the detailed manual steps for local setup, Supabase setup, Cloudflare setup, and MCP wiring.
 - `docs/roadmap.md` is the active implementation plan and priority reference.
+- `docs/release-checklist.md` is the deploy-time verification checklist.
 
 ## Current App Surfaces
 
@@ -43,6 +45,7 @@ npm run generate:metadata -- --dry-run
 npm run generate:metadata
 npm run generate:embeddings -- --dry-run
 npm run generate:embeddings
+npm run smoke:web -- --base-url https://tmagen-web.kristian-jackson.workers.dev
 ```
 
 ## Recommended Order

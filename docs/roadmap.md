@@ -13,6 +13,7 @@ The current system has these foundations in place:
 - first-pass draft generation with prompt and retrieval snapshots
 - revision-aware child versions with stored revision notes and feedback
 - published story routes and archive feed driven by explicit version publication
+- automated end-to-end smoke coverage for the core auth, workspace, revision, and publish loop
 - draft deletion and project deletion
 - provenance links from generated drafts back to source episodes
 
@@ -49,7 +50,7 @@ Add operational discipline around retrieval quality and story generation quality
 Target outcomes:
 
 - define a small set of canonical story briefs for evaluation
-- add smoke tests for auth, workspace, generation, revision, deletion, and publishing
+- turn the existing smoke flow into a repeatable release check and CI candidate
 - validate retrieval quality against expected source material
 - improve provenance display from episode-level links to clearer chunk-level evidence
 - tighten failure handling around model output quality and retry policy
@@ -63,6 +64,7 @@ Why this is second:
 Implementation notes:
 
 - test the boundaries: auth cookies, RLS, version creation, and destructive actions
+- keep the smoke flow runnable against production without leaving lasting data behind
 - keep a human-reviewed benchmark set for retrieval quality and published-story quality
 - prefer structured generation metadata over ad hoc logs
 - surface model usage and retrieval packet size in the UI for easier debugging
