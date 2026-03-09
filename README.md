@@ -15,6 +15,7 @@ TMAGen is a Cloudflare-hosted, Supabase-backed fan-fiction platform inspired by 
 - `docs/roadmap.md` is the active implementation plan and priority reference.
 - `docs/release-checklist.md` is the deploy-time verification checklist.
 - `docs/outreach-readiness.md` is the public-facing polish and outreach prep checklist.
+- `docs/outreach-email.md` is the first-contact outreach draft.
 
 ## Current App Surfaces
 

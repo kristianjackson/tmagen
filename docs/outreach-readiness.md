@@ -50,15 +50,25 @@ This command:
 - captures screenshots into `/tmp/tmagen-showcase`
 - writes `/tmp/tmagen-showcase/manifest.json`
 
-## Current Showcase
+## Current Showcase Set
 
-Current canonical public story:
+Current live archive:
+
+- `https://tmagen-web.kristian-jackson.workers.dev/`
+
+Current canonical public stories:
 
 - `https://tmagen-web.kristian-jackson.workers.dev/stories/platform-nine-no-service`
+- `https://tmagen-web.kristian-jackson.workers.dev/stories/the-last-floor-plan`
+- `https://tmagen-web.kristian-jackson.workers.dev/stories/the-last-weather-balloon`
+- `https://tmagen-web.kristian-jackson.workers.dev/stories/no-tape-attached`
 
-Version-specific route:
+Current screenshot bundles:
 
-- `https://tmagen-web.kristian-jackson.workers.dev/stories/platform-nine-no-service/v/2`
+- `/tmp/tmagen-showcase`
+- `/tmp/tmagen-showcase-spiral`
+- `/tmp/tmagen-showcase-vast`
+- `/tmp/tmagen-showcase-meta`
 
 ## Public-Facing Requirements
 
@@ -82,6 +92,7 @@ Prepare these before sending any outreach note:
   - published story reader
 - one short paragraph explaining why the project exists
 - one short paragraph explaining what is technically interesting about it
+- one outreach draft that can be pasted without rewriting from scratch
 
 ## Technical Readiness Checklist
 
@@ -119,3 +130,7 @@ TMAGen is strong enough to show, but it is still improving in these areas:
 - creator-facing editorial controls can still deepen
 
 These are not blockers for a respectful demo, but they should be understood before outreach.
+
+## Related Documents
+
+- `docs/outreach-email.md`
