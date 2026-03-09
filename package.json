@@ -7,6 +7,7 @@
   "scripts": {
     "build": "npm --prefix apps/web run build",
     "cf-typegen": "npm --prefix apps/web run cf-typegen",
+    "create:showcase": "node scripts/create-showcase-story.mjs --env-file ./apps/web/.dev.vars",
     "deploy:web": "npm --prefix apps/web run deploy",
     "dev": "npm --prefix apps/web run dev",
     "evaluate:retrieval": "node scripts/evaluate-retrieval.mjs --env-file ./apps/web/.dev.vars",

@@ -33,6 +33,33 @@ The shortest useful walkthrough is:
 
 The goal is for someone unfamiliar with the project internals to understand the entire loop in under a minute.
 
+## Showcase Automation
+
+Use this command to refresh the current public showcase story and screenshot bundle:
+
+```bash
+npm run create:showcase
+```
+
+This command:
+
+- creates or refreshes a dedicated showcase account
+- creates the showcase project brief
+- generates a draft and one revision
+- publishes the final version
+- captures screenshots into `/tmp/tmagen-showcase`
+- writes `/tmp/tmagen-showcase/manifest.json`
+
+## Current Showcase
+
+Current canonical public story:
+
+- `https://tmagen-web.kristian-jackson.workers.dev/stories/platform-nine-no-service`
+
+Version-specific route:
+
+- `https://tmagen-web.kristian-jackson.workers.dev/stories/platform-nine-no-service/v/2`
+
 ## Public-Facing Requirements
 
 Before outreach, the live site should keep these visible:
